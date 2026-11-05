@@ -172,7 +172,8 @@ fn production_receipt_validation_rejects_artifact_subject_source_format_and_exit
     fs::write("framing-inputs/a", b"framing-inputs/b\0payload").unwrap();
     fs::remove_file("framing-inputs/b").unwrap();
     assert_ne!(
-        identity("framing", &["framing-inputs"]).unwrap(), separate,
+        identity("framing", &["framing-inputs"]).unwrap(),
+        separate,
         "file contents must not impersonate another input's name and bytes"
     );
 }
