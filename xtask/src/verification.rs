@@ -294,7 +294,9 @@ fn identity(name: &str, paths: &[&str]) -> Result<String, Box<dyn Error + Send +
     for path in inventory {
         hash.update(path.as_os_str().as_encoded_bytes());
         hash.update([0]);
-        hash.update(fs::read(path)?);
+        let bytes = fs::read(path)?;
+        hash.update(u64::try_from(bytes.len())?.to_le_bytes());
+        hash.update(bytes);
     }
     Ok(format!("{:x}", hash.finalize()))
 }

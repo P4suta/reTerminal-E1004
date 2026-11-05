@@ -165,6 +165,16 @@ fn production_receipt_validation_rejects_artifact_subject_source_format_and_exit
         current(name, true).is_err(),
         "restoring source must not revive a receipt from a rejected attempt"
     );
+    fs::create_dir("framing-inputs").unwrap();
+    fs::write("framing-inputs/a", b"").unwrap();
+    fs::write("framing-inputs/b", b"payload").unwrap();
+    let separate = identity("framing", &["framing-inputs"]).unwrap();
+    fs::write("framing-inputs/a", b"framing-inputs/b\0payload").unwrap();
+    fs::remove_file("framing-inputs/b").unwrap();
+    assert_ne!(
+        identity("framing", &["framing-inputs"]).unwrap(), separate,
+        "file contents must not impersonate another input's name and bytes"
+    );
 }
 
 #[test]
