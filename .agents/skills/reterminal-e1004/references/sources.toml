@@ -1,0 +1,276 @@
+[archive]
+retrieval_started_at_utc = "2026-11-05T13:29:22Z"
+retrieval_completed_at_utc = "2026-11-05T13:36:53Z"
+directory = "upstream"
+checksum_file = "sources.sha256"
+files = 71
+bytes = 57555452
+capture = "Publisher response bodies unchanged; original Markdown and Docusaurus markup retained"
+scope = "Four complete English manuals, the eight-page schematic, three driver/configuration files, 58 figures, and five license/policy files"
+limits = "Embedded video, the external Arduino logo image, remote services, SDK manuals, and third-party datasheets are outside this snapshot"
+
+[archive.figures]
+publisher = "Seeed Studio and Wiki contributors"
+url_prefix = "https://files.seeedstudio.com/wiki/reterminal_e10xx/img/"
+local_directory = "upstream/images"
+path_mapping = "URL-decode the suffix after url_prefix; retain its directories and case"
+files = 58
+bytes = 54719082
+license = "CC-BY-SA-4.0 for the associated product-document figures under the saved Seeed policy"
+version = "Retrieval-time responses from mutable URLs; not Git-versioned image objects"
+model = "Figures cited by the four saved E Series manuals; model-specific directories remain distinct"
+unverified = "Correspondence of photographs and screenshots with the delivered device and factory firmware"
+
+[[archive.license]]
+url = "https://raw.githubusercontent.com/Seeed-Studio/wiki-documents/f096f684a19950b30469919a9b0c38c0a8b013cc/sites/en/docs/License.md"
+local_file = "upstream/licenses/seeed-wiki-policy.md"
+bytes = 7798
+sha256 = "ac9cb3793d253223cab1a569854551a02e6ffb4d08af562d2566125d40ee1304"
+
+[[archive.license]]
+url = "https://creativecommons.org/licenses/by-sa/4.0/legalcode.txt"
+local_file = "upstream/licenses/cc-by-sa-4.0.txt"
+bytes = 20138
+sha256 = "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5"
+
+[[archive.license]]
+url = "https://files.seeedstudio.com/wiki/common/MIT_LICENSE"
+local_file = "upstream/licenses/seeed-examples-mit.txt"
+bytes = 1124
+sha256 = "33af7ecaab51739bf54c1c7c003d4c6f2460b5f80072e3bb7e88ef3f5ca71fff"
+
+[[archive.license]]
+url = "https://raw.githubusercontent.com/Seeed-Studio/wiki-documents/f096f684a19950b30469919a9b0c38c0a8b013cc/LICENSE"
+local_file = "upstream/licenses/wiki-repository-gpl-3.0.txt"
+bytes = 35149
+sha256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+
+[[archive.license]]
+url = "https://raw.githubusercontent.com/Seeed-Studio/Seeed_GFX/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/license.txt"
+local_file = "upstream/licenses/seeed-gfx.txt"
+bytes = 6243
+sha256 = "f79bffc86315004815e4e7f11a23e757de0f25793022e6020938e2db1a495a9d"
+
+[[source]]
+url = "https://wiki.seeedstudio.com/getting_started_with_reterminal_e1004/"
+title = "Getting Started with reTerminal E1004"
+publisher = "Seeed Studio and Wiki contributors"
+retrieved = "2026-11-05"
+model = "E1004"
+revision = "Wiki source commit f096f684a19950b30469919a9b0c38c0a8b013cc; deployed page reports 2026-09-10"
+license = "CC-BY-SA-4.0 documents and figures; MIT embedded examples unless specified; source repository GPL-3.0 notice retained"
+local_file = "upstream/wiki/e1004-manual.md"
+download_url = "https://raw.githubusercontent.com/Seeed-Studio/wiki-documents/f096f684a19950b30469919a9b0c38c0a8b013cc/sites/en/docs/Sensor/ePaper_Displays/reTerminal_E10xx/getting_started_with_reterminal_e1004.md"
+git_blob_sha1 = "e236b0ba1f3599b4a71ff0b0bbfc4db3287b7cad"
+bytes = 29099
+sha256 = "3dd4096390f860e0d61c5de1eca2ee27173ebe0825f03281165365c9f89d99de"
+capture = "Full original Markdown/MDX source, unchanged"
+unverified = "Delivered PCB revision, battery life, update duration, and sleep current"
+
+[[source]]
+url = "https://files.seeedstudio.com/wiki/reterminal_e10xx/res/202004523_reTerminal%20E1004_V1.0_SCH_260105.pdf"
+retrieved = "2026-11-05"
+model = "E1004"
+revision = "Schematic 1.0, 2026-01-05"
+license = "CC-BY-SA-4.0 as printed on schematic"
+local_file = "upstream/hardware/e1004-schematic.pdf"
+bytes = 2420878
+sha256 = "a3e2666b18fb10cc61fd0e05d2bc1d0870ec56bfc928ff192db78f1aa9e5d104"
+pages = 8
+http_last_modified = "2026-02-27T01:34:33Z"
+capture = "Original PDF response, unchanged"
+unverified = "Correspondence with delivered board and panel-enable polarity"
+
+[[source]]
+url = "https://github.com/Seeed-Studio/Seeed_GFX/blob/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/TFT_Drivers/T133A01_Defines.h"
+retrieved = "2026-11-05"
+model = "T133A01 with E1004 Setup523 overrides"
+revision = "0dfdd7135425be82b5bb4b4b58d74dd51ab29a59"
+license = "Upstream license.txt includes BSD-2-Clause and Adafruit notices; see NOTICE"
+local_file = "upstream/seeed-gfx/T133A01_Defines.h"
+download_url = "https://raw.githubusercontent.com/Seeed-Studio/Seeed_GFX/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/TFT_Drivers/T133A01_Defines.h"
+license_file = "upstream/licenses/seeed-gfx.txt"
+bytes = 12119
+sha256 = "e9d4cec44cdc2603790ceda09adc462f60b7385669046f041cff38e9c8eb81e1"
+capture = "Original driver definitions, unchanged; reference data only"
+unverified = "Physical register acceptance, BUSY timing, colors, seams, and wake behavior"
+
+[[source]]
+url = "https://github.com/Seeed-Studio/Seeed_GFX/blob/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/User_Setups/Setup523_Seeed_reTerminal_E1004.h"
+retrieved = "2026-11-05"
+model = "E1004"
+revision = "0dfdd7135425be82b5bb4b4b58d74dd51ab29a59"
+license = "Seeed_GFX license.txt; see NOTICE"
+local_file = "upstream/seeed-gfx/Setup523_Seeed_reTerminal_E1004.h"
+download_url = "https://raw.githubusercontent.com/Seeed-Studio/Seeed_GFX/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/User_Setups/Setup523_Seeed_reTerminal_E1004.h"
+license_file = "upstream/licenses/seeed-gfx.txt"
+bytes = 1405
+sha256 = "ca80866f0544ef21b288cbf2e981757372540ad1c8bc668a9e75339be91f6e19"
+capture = "Original setup header, unchanged; reference data only"
+unverified = "Delivered board pin continuity"
+
+[[source]]
+url = "https://wiki.seeedstudio.com/reterminal_e10xx_with_arduino_peripherals/"
+title = "Arduino Cookbook: Onboard Peripherals (reTerminal E Series)"
+publisher = "Seeed Studio and Wiki contributors"
+retrieved = "2026-11-05"
+model = "Shared E1001–E1004 cookbook with E1004-specific LED and power pins"
+revision = "Wiki source commit f096f684a19950b30469919a9b0c38c0a8b013cc"
+license = "CC-BY-SA-4.0 documents and figures; MIT embedded examples unless specified; repository GPL-3.0 notice retained"
+local_file = "upstream/wiki/arduino-peripherals.md"
+download_url = "https://raw.githubusercontent.com/Seeed-Studio/wiki-documents/f096f684a19950b30469919a9b0c38c0a8b013cc/sites/en/docs/Sensor/ePaper_Displays/reTerminal_E10xx/cookbooks/arduino_peripherals.md"
+git_blob_sha1 = "27013c35ed120431987c032a3b1060276b791cb0"
+bytes = 86849
+sha256 = "93448765bc1e1b06b75401f9870578366f13f838fcd70faa61b96e16933c912d"
+capture = "Full original Markdown/MDX source, unchanged"
+unverified = "ADC calibration and supported SD capacity; E1004 overview specifies up to 32 GB"
+
+[[source]]
+url = "https://wiki.seeedstudio.com/reterminal_e10xx_with_arduino_peripherals_2/"
+title = "Arduino Cookbook: RTC, Low Power, Audio & Touch (reTerminal E Series)"
+publisher = "Seeed Studio and Wiki contributors"
+retrieved = "2026-11-05"
+model = "Shared RTC section; microphone and GT911 examples are not E1004 capabilities"
+revision = "Wiki source commit f096f684a19950b30469919a9b0c38c0a8b013cc"
+license = "CC-BY-SA-4.0 documents and figures; MIT embedded examples unless specified; repository GPL-3.0 notice retained"
+local_file = "upstream/wiki/arduino-rtc.md"
+download_url = "https://raw.githubusercontent.com/Seeed-Studio/wiki-documents/f096f684a19950b30469919a9b0c38c0a8b013cc/sites/en/docs/Sensor/ePaper_Displays/reTerminal_E10xx/cookbooks/arduino_peripherals_2.md"
+git_blob_sha1 = "d588425bf7290ed97e5daf583a2abb019784a57b"
+bytes = 76026
+sha256 = "dd208ab6fe9cf21de18bee4ba88ecde96875b6f2507a8b77ac7f6e287b2ad827"
+capture = "Full original Markdown/MDX source, unchanged"
+unverified = "Physical RTC backup and low-power wake behavior"
+
+[[source]]
+url = "https://wiki.seeedstudio.com/reterminal_e10xx_with_arduino/"
+title = "Arduino Cookbook: ePaper Display (reTerminal E Series)"
+publisher = "Seeed Studio and Wiki contributors"
+retrieved = "2026-11-05"
+model = "Shared E1001–E1004 display cookbook; choose the E1004 tab"
+revision = "Wiki source commit f096f684a19950b30469919a9b0c38c0a8b013cc"
+license = "CC-BY-SA-4.0 documents and figures; MIT embedded examples unless specified; repository GPL-3.0 notice retained"
+local_file = "upstream/wiki/arduino-display.md"
+download_url = "https://raw.githubusercontent.com/Seeed-Studio/wiki-documents/f096f684a19950b30469919a9b0c38c0a8b013cc/sites/en/docs/Sensor/ePaper_Displays/reTerminal_E10xx/cookbooks/arduino.md"
+git_blob_sha1 = "a03d51f12d4e5012a704dcc7d6ce85e786f80218"
+bytes = 137142
+sha256 = "2f4f978765598560c454be07bc6df6935fd1752c4fa84411c7db124cfa00955e"
+capture = "Full original Markdown/MDX source, unchanged"
+unverified = "Actual panel timing and electrical behavior on delivered hardware"
+
+[[source]]
+url = "https://github.com/Seeed-Studio/Seeed_GFX/blob/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/User_Setups/XIAO_SPI_Frequency.h"
+retrieved = "2026-11-05"
+model = "Shared Seeed_GFX SPI clock selection included by Setup523"
+revision = "0dfdd7135425be82b5bb4b4b58d74dd51ab29a59"
+license = "Seeed_GFX license.txt and component notices retained"
+local_file = "upstream/seeed-gfx/XIAO_SPI_Frequency.h"
+download_url = "https://raw.githubusercontent.com/Seeed-Studio/Seeed_GFX/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/User_Setups/XIAO_SPI_Frequency.h"
+license_file = "upstream/licenses/seeed-gfx.txt"
+bytes = 2400
+sha256 = "3e28ff502455badfdddbad1837ff75abef7cb6f0da2ccf0c44cfd6670a79b4df"
+capture = "Original configuration header, unchanged; reference data only"
+unverified = "Maximum reliable SPI clock for the delivered board"
+
+[[source]]
+url = "https://github.com/Seeed-Projects/OSHW-reTerminal-Series-E-D/tree/8d97d8912987c07529287629f7e73039bb0e6384"
+retrieved = "2026-11-05"
+model = "Official multi-model firmware hub; use E1004 examples only"
+revision = "8d97d8912987c07529287629f7e73039bb0e6384"
+license = "MIT, Copyright 2026 Seeed-Projects; no firmware code copied"
+unverified = "Factory firmware behavior and recovery on delivered hardware"
+
+[[source]]
+url = "https://sensirion.com/media/documents/33FD6951/662A593A/HT_DS_Datasheet_SHT4x.pdf"
+retrieved = "2026-11-05"
+model = "SHT40 / SHT4x"
+revision = "6.6, April 2024"
+license = "Sensirion datasheet copyright; formulas and protocol reimplemented"
+unverified = "Sensor accuracy and self-heating on the assembled device"
+
+[[source]]
+url = "https://www.nxp.com/docs/en/data-sheet/PCF8563.pdf"
+retrieved = "2026-11-05"
+model = "PCF8563"
+revision = "11, 2015-10-26"
+license = "NXP datasheet copyright; register facts reimplemented"
+unverified = "Backup-cell health and oscillator drift"
+
+[[source]]
+url = "https://www.silergy.com/download/downloadFile?ftype=note&id=4013&type=product"
+retrieved = "2026-11-05"
+model = "SY6974B"
+revision = "0.9, 2020"
+license = "Silergy copyright and restricted notice; document not redistributed"
+unverified = "Physical charger identity and charge-state readings"
+
+[[source]]
+url = "https://docs.espressif.com/projects/rust/esp-hal/1.2.0/esp32s3/esp_hal/index.html"
+retrieved = "2026-11-05"
+model = "ESP32-S3"
+revision = "esp-hal 1.2.0"
+license = "MIT OR Apache-2.0 for Rust implementation; vendor binary terms remain separate"
+unverified = "Actual deep-sleep current, radio coexistence, and electrical timing"
+
+[[source]]
+url = "https://docs.espressif.com/projects/rust/book/getting-started/toolchain.html"
+retrieved = "2026-11-05"
+model = "Xtensa ESP32-S3 and host toolchains"
+revision = "Retrieved 2026-11-05; compiler pinned separately"
+license = "Rust on ESP Book upstream documentation license; linked only"
+unverified = "Installation on Windows and Linux hosts"
+
+[[source]]
+url = "https://github.com/embassy-rs/trouble/tree/a4bbe5510fc7f88d52b30ce3c5a25de25567aa96/examples/apps/src/ble_bas_peripheral.rs"
+retrieved = "2026-11-05"
+model = "Bluetooth Low Energy battery service"
+revision = "a4bbe5510fc7f88d52b30ce3c5a25de25567aa96; trouble-host crate pinned to 0.8.0"
+license = "MIT OR Apache-2.0; protocol pattern adapted; see NOTICE"
+unverified = "Interoperability with actual BLE centrals"
+
+[[source]]
+url = "https://html.spec.whatwg.org/multipage/form-elements.html#the-button-element"
+retrieved = "2026-11-05"
+model = "Web preview"
+revision = "Living Standard retrieved 2026-11-05"
+license = "WHATWG documentation terms; linked only"
+unverified = "Assistive-technology behavior beyond the recorded browser checks"
+
+[[source]]
+url = "https://www.w3.org/WAI/tutorials/forms/labels/"
+retrieved = "2026-11-05"
+model = "Web preview labels"
+revision = "Live tutorial retrieved 2026-11-05"
+license = "W3C document license; linked only"
+unverified = "Screen-reader operation on physical devices"
+
+[[source]]
+url = "https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html"
+retrieved = "2026-11-05"
+model = "Web preview keyboard focus"
+revision = "WCAG 2.2 Understanding SC 2.4.7"
+license = "W3C document license; linked only"
+unverified = "Full WCAG conformance is not established by the focused tests"
+
+[[source]]
+url = "https://sensirion.com/resource/datasheet/sht4x"
+retrieved = "2026-11-05"
+model = "SHT40 / SHT4x checksum and signal conversion"
+revision = "7.3, June 2026; sections 4.4 and 4.6"
+license = "Sensirion copyright; numeric protocol facts reimplemented; document not redistributed"
+unverified = "Sensor accuracy and correspondence with delivered component revision"
+
+[[source]]
+url = "https://github.com/espressif/esp-toolchain-docs/blob/03feaa6ff35a73e62f7553492c967815ead2cfb0/qemu/README.md"
+retrieved = "2026-11-06"
+model = "ESP32-S3 CPU emulation and peripheral-model coverage"
+revision = "03feaa6ff35a73e62f7553492c967815ead2cfb0"
+license = "Document license not established; external reference only; no source text redistributed"
+unverified = "Distributed-image execution is unsupported: QEMU rejects 32 MB flash; an 8 MB diagnostic image reaches the application but waits in the SDK PLL routine; details are in docs/verification/target-emulation.md"
+
+[[source]]
+url = "https://github.com/espressif/qemu/releases/tag/esp-develop-9.2.2-20260417"
+retrieved = "2026-11-06"
+model = "ESP32-S3 target-binary diagnostic experiment"
+revision = "esp-develop-9.2.2-20260417; Apple silicon archive sha256 bb8c15810565d3df1665dc34962430885e11bc95575b228fb44698146be1e9d6"
+license = "QEMU GPL-2.0; binary used locally, not redistributed"
+unverified = "Complete board execution and physical behavior; concrete model limitations are recorded in docs/verification/target-emulation.md"

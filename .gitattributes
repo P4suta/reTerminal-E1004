@@ -1,0 +1,2 @@
+fuzz/corpus/** binary
+.agents/skills/reterminal-e1004/references/upstream/** -text -whitespace linguist-vendored
