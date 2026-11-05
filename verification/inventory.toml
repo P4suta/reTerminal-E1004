@@ -1,0 +1,61 @@
+version = 1
+kani = "0.68.0"
+cbmc = "6.11.0"
+mutants = "27.1.0"
+fuzz = "0.13.2"
+miri = "nightly-2026-08-21"
+fuzz_runs = 10000
+fuzz_seed = 104
+
+core_harnesses = [
+  "panel_failure_revokes_sleep_and_stale_failures_cannot_change_state",
+  "presentation_accepts_only_the_active_success_and_cancel_revokes_completion",
+  "decimal_parser_matches_signed_fixed_point_without_rounding",
+  "decimal_parser_rejects_non_decimal_bytes_without_panicking",
+  "rotation_and_address_are_bounded",
+  "nibble_write_preserves_the_other_pixel",
+  "controller_mapping_is_disjoint_and_bounded",
+  "battery_estimate_is_monotone_and_bounded",
+  "settings_round_trip_and_single_bit_corruption",
+  "updating_never_sleeps_or_starts_a_second_display",
+  "timeout_never_becomes_success_or_sleep",
+  "rotation_is_injective",
+  "sleep_requires_all_work_to_be_quiescent",
+]
+
+bsp_harnesses = [
+  "flash_addresses_are_bounded_and_sectors_are_disjoint",
+  "console_step_preserves_buffer_and_discard_invariants",
+  "stable_button_never_repeats_a_press",
+  "sensor_words_convert_without_overflow",
+  "calendar_round_trip_preserves_all_valid_fields",
+]
+
+ui_harnesses = ["text_buffer_keeps_utf8_and_reports_overflow"]
+
+mutation_files = [
+  "crates/device-core/src/presentation.rs",
+  "crates/device-core/src/geometry.rs",
+  "crates/device-core/src/settings.rs",
+  "crates/device-core/src/telemetry.rs",
+  "crates/device-core/src/app.rs",
+]
+
+preview_mutation_files = [
+  "crates/preview/src/lib.rs",
+  "crates/preview/src/measurements.rs",
+]
+
+panel_mutation_files = ["crates/t133a01/src/lib.rs"]
+
+runtime_mutation_files = [
+  "crates/device-runtime/src/policy.rs",
+  "crates/device-runtime/src/measurements.rs",
+  "crates/device-runtime/src/tasks.rs",
+  "crates/device-runtime/src/buttons.rs",
+  "crates/device-runtime/src/console.rs",
+  "crates/device-runtime/src/state.rs",
+  "crates/device-runtime/src/wifi.rs",
+  "crates/device-runtime/src/ble.rs",
+  "crates/device-runtime/src/packet_pool.rs",
+]

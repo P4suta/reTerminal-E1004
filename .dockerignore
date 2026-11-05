@@ -1,0 +1,6 @@
+target
+firmware/target
+fuzz/target
+.git
+web/pkg
+verification/results

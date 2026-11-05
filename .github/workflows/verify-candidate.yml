@@ -1,0 +1,31 @@
+name: Verify candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: candidate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    name: Candidate verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+      - run: mise x -- rustup target add wasm32-unknown-unknown
+      - run: mise x -- just check
+      - run: mise x -- just dependencies
+      - run: mise x -- just browser
+      - name: Install Xtensa compiler
+        run: |
+          mise x -- cargo install --locked espup --version 0.19.0
+          mise x -- espup install --targets esp32s3 --toolchain-version 1.97.0.0 --crosstool-toolchain-version 16.1.0_20260609 --name esp-e1004
+      - run: mise x -- just firmware
+      - run: mise x -- just firmware-clippy
+      - run: mise x -- just verification-image
+      - run: mise x -- just assurance
+      - run: mise x -- just check-assurance

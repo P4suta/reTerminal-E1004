@@ -1,0 +1,29 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+tiny_http = "=0.12.0"
+sha2 = "=0.10.9"
+toml = "=0.9.8"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+cssparser = "=0.35.0"
+chromiumoxide = { version = "=0.9.1", optional = true, default-features = false }
+tokio = { version = "=1.54.1", optional = true, features = ["rt", "time"] }
+futures = { version = "=0.3.34", optional = true }
+device-preview = { path = "../crates/preview" }
+device-core = { path = "../crates/device-core" }
+e1004-bsp = { path = "../crates/e1004-bsp" }
+syn = { version = "=2.0.119", features = ["full", "visit"] }
+quote = "=1.0.47"
+
+[features]
+browser = ["dep:chromiumoxide", "dep:tokio", "dep:futures"]
+
+[lints]
+workspace = true

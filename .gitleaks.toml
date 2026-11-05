@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated build artifacts and local verification reports"
+paths = [
+  '''^target/''',
+  '''^firmware/target/''',
+  '''^fuzz/target/''',
+  '''^web/pkg/''',
+  '''^verification/results/''',
+]
