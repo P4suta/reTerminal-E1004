@@ -1,0 +1,32 @@
+[package]
+name = "web-preview"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+device-core = { path = "../device-core" }
+device-preview = { path = "../preview" }
+wasm-bindgen = "=0.2.130"
+web-sys = { version = "=0.3.107", features = [
+  "Window",
+  "Document",
+  "HtmlCanvasElement",
+  "CanvasRenderingContext2d",
+  "ImageData",
+  "HtmlElement",
+  "HtmlFormElement",
+  "HtmlInputElement",
+  "HtmlSelectElement",
+  "HtmlTextAreaElement",
+  "Event",
+  "EventTarget",
+] }
+
+[lints]
+workspace = true

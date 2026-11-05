@@ -1,0 +1,32 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #000; background: #fff; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1400px; margin: 0 auto; padding: 32px; }
+header { border-bottom: 3px solid #000; margin-bottom: 32px; }
+h1 { font-size: clamp(28px, 4vw, 44px); margin: 0; }
+h2 { font-size: 22px; margin: 0 0 20px; }
+p { line-height: 1.6; }
+.workspace { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 40px; align-items: start; }
+section { margin-bottom: 32px; }
+canvas { display: block; width: 100%; height: auto; border: 2px solid #000; image-rendering: pixelated; }
+label { display: block; margin: 16px 0 6px; font-weight: 700; }
+input, select, textarea, button { font: inherit; color: #000; background: #fff; border: 2px solid #000; border-radius: 0; padding: 10px 12px; }
+input, select, textarea { width: 100%; }
+button { cursor: pointer; min-height: 44px; font-weight: 600; }
+button:hover, button:active { color: #fff; background: #000; }
+:focus-visible { outline: 3px solid #000; outline-offset: 4px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.hint { font-size: 14px; margin: 6px 0 12px; }
+details { margin-top: 20px; border-top: 2px solid #000; padding-top: 16px; }
+summary { font-weight: 700; cursor: pointer; padding: 8px 0; }
+.advanced { margin-bottom: 32px; }
+.advanced section { margin-top: 24px; }
+button:disabled { color: #000; background: #fff; border-style: dashed; cursor: default; }
+button[aria-pressed="true"] { color: #fff; background: #000; }
+input[aria-invalid="true"] { border-width: 4px; }
+#update-status { min-height: 3.2em; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.7 ui-monospace, monospace; }
+#error { font-weight: 700; }
+@media (max-width: 800px) { main { padding: 20px; } .workspace { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
+@media (max-width: 380px) { .field-pair { grid-template-columns: minmax(0, 1fr); } }

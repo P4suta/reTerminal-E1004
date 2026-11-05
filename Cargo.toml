@@ -5,6 +5,9 @@ members = [
   "crates/t133a01",
   "crates/e1004-bsp",
   "crates/device-ui",
+  "crates/preview",
+  "crates/native-preview",
+  "crates/web-preview",
 ]
 exclude = ["firmware", "fuzz", "vendor/trouble-host"]
 

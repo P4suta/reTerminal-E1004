@@ -1,0 +1,14 @@
+[package]
+name = "device-preview"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+device-core = { path = "../device-core" }
+device-ui = { path = "../device-ui" }
+
+[lints]
+workspace = true

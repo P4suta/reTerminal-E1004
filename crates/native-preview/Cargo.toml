@@ -1,0 +1,16 @@
+[package]
+name = "native-preview"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+device-preview = { path = "../preview" }
+device-core = { path = "../device-core" }
+png = "=0.18.0"
+minifb = "=0.29.0"
+
+[lints]
+workspace = true

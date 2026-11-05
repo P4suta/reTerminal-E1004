@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>reTerminal E1004</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header><h1>reTerminal E1004</h1><p>Offline device preview · Simulated measurements</p></header>
+    <noscript>Enable JavaScript to run the Rust device preview.</noscript>
+    <div class="workspace">
+      <section class="display-panel" aria-labelledby="display-heading">
+        <h2 id="display-heading">Display</h2>
+        <div class="buttons">
+          <button type="button" id="previous" aria-label="Previous screen">Previous</button>
+          <button type="button" id="refresh">Refresh</button>
+          <button type="button" id="next" aria-label="Next screen">Next</button>
+        </div>
+        <p id="update-status" role="status" aria-atomic="true">Loading Rust preview.</p>
+        <canvas id="display" width="1200" height="1600" aria-label="Simulated device display" aria-describedby="state"></canvas>
+        <label for="rotation">Orientation</label>
+        <select id="rotation"><option value="0">Portrait</option><option value="1">Landscape</option><option value="2">Inverted portrait</option><option value="3">Inverted landscape</option></select>
+      </section>
+      <div class="controls">
+        <section aria-labelledby="inputs-heading">
+          <h2 id="inputs-heading">Measurements</h2>
+          <p>Change values and apply them together.
+          The preview runs locally without an account.</p>
+          <p id="error" role="alert" aria-atomic="true"></p>
+          <form id="measurements" novalidate>
+          <label for="clock">RTC time</label>
+          <input id="clock" type="text" value="2026-11-05T19:30:00" maxlength="19" required aria-describedby="clock-help">
+          <p class="hint" id="clock-help">YYYY-MM-DDTHH:MM:SS, from 2000 to 2099, without a time zone.</p>
+          <div class="field-pair">
+          <div><label for="temperature">Temperature (°C)</label>
+          <input id="temperature" type="number" min="-45" max="130" step="0.01" value="23.45" required aria-describedby="temperature-help">
+          <p class="hint" id="temperature-help">-45 to 130 °C.</p></div>
+          <div><label for="humidity">Relative humidity (%)</label>
+          <input id="humidity" type="number" min="0" max="100" step="0.01" value="56.78" required aria-describedby="humidity-help">
+          <p class="hint" id="humidity-help">0 to 100 %.</p></div>
+          </div>
+          <label for="battery">Battery voltage (mV)</label>
+          <input id="battery" type="number" min="2000" max="5000" step="1" value="3900" required aria-describedby="battery-help">
+          <p class="hint" id="battery-help">2000 to 5000 mV.
+          Battery percentage is an estimate.</p>
+          <label for="charging">Charging</label>
+          <select id="charging"><option value="unknown">Unknown</option><option value="charging">Charging</option><option value="off">Not charging</option></select>
+          <details>
+          <summary>Storage and radio states</summary>
+          <label for="sd">SD card</label>
+          <select id="sd"><option value="absent">Absent</option><option value="ready">Ready</option><option value="fault">Fault</option></select>
+          <label for="wifi">Wi-Fi</label>
+          <select id="wifi"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select>
+          <label for="ble">Bluetooth Low Energy</label>
+          <select id="ble"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select>
+          </details>
+          <div class="buttons"><button type="submit" id="apply">Apply measurements</button><button type="button" id="reset-example">Reset example</button></div>
+          </form>
+        </section>
+        <details class="advanced" open>
+          <summary>Update simulation and faults</summary>
+        <section aria-labelledby="update-heading">
+          <h2 id="update-heading">Update simulation</h2>
+          <p>Hold completion to inspect queued screens and failures.
+          Refresh retries a failed update.</p>
+          <div class="buttons">
+            <button type="button" id="wait" aria-pressed="false">Hold completion</button>
+            <button type="button" id="complete">Complete update</button>
+            <button type="button" id="immediate" aria-pressed="true">Immediate updates</button>
+            <button type="button" id="timeout">Panel timeout</button>
+            <button type="button" id="sensor-fault">Sensor fault</button>
+            <button type="button" id="sensor-missing">Sensor missing</button>
+            <button type="button" id="rtc-invalid">Invalid RTC</button>
+            <button type="button" id="advance">Advance 15 minutes</button>
+          </div>
+        </section>
+        </details>
+        <details class="advanced">
+          <summary>Event recording and replay</summary>
+        <section aria-labelledby="events-heading">
+          <h2 id="events-heading">Event recording</h2>
+          <p>Show the recording to save or edit it.
+          Replay replaces the preview only when every line is valid.</p>
+          <label for="events">Event log</label>
+          <textarea id="events" rows="8" spellcheck="false"></textarea>
+          <div class="buttons"><button type="button" id="record">Show recording</button><button type="button" id="replay">Replay log</button></div>
+        </section>
+        </details>
+        <section aria-labelledby="state-heading">
+          <h2 id="state-heading">Screen information</h2>
+          <pre id="state"></pre>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script type="module">
+    import init, { mount } from './pkg/web_preview.js';
+    try {
+      await init();
+      mount();
+    } catch {
+      document.getElementById('error').textContent = 'The Rust preview could not start. Reload the page or restart the local preview server.';
+    }
+  </script>
+</body>
+</html>
