@@ -1,0 +1,7 @@
+name = "E1004 firmware"
+summary = "Offline Rust firmware and shared native and Web previews for the reTerminal E1004"
+install = "mise install"
+usage = '''
+mise x -- just sim --png target/status.png --replay verification/fixtures/status.events'''
+copyright = "Yasunobu"
+license = "MIT OR Apache-2.0"

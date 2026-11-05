@@ -1,0 +1,55 @@
+model = "reTerminal E1004"
+status = "awaiting-device"
+board_revision = "unrecorded"
+firmware_sha256 = "unrecorded"
+instrument = "unrecorded"
+supply = "unrecorded"
+ambient_temperature_celsius = "unrecorded"
+
+[[measurement]]
+name = "Panel colors, controller seam, and rotations"
+status = "unverified"
+result = "unrecorded"
+
+[[measurement]]
+name = "Full refresh and timeout recovery"
+status = "unverified"
+unit = "milliseconds"
+result = "unrecorded"
+
+[[measurement]]
+name = "Battery voltage calibration and charging status"
+status = "unverified"
+unit = "millivolts"
+result = "unrecorded"
+
+[[measurement]]
+name = "Button and timer wake, and clock backup loss"
+status = "unverified"
+result = "unrecorded"
+
+[[measurement]]
+name = "Card removal, settings power interruption, and restart"
+status = "unverified"
+result = "unrecorded"
+
+[[measurement]]
+name = "Serial console and expansion input and output"
+status = "unverified"
+result = "unrecorded"
+
+[[measurement]]
+name = "Wi-Fi scan, connection, and disconnection"
+status = "unverified"
+result = "unrecorded"
+
+[[measurement]]
+name = "Bluetooth Low Energy battery service and disable and re-enable"
+status = "unverified"
+result = "unrecorded"
+
+[[measurement]]
+name = "Sleep current with peripherals inactive"
+status = "unverified"
+unit = "microamperes"
+result = "unrecorded"
