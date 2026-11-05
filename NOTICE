@@ -24,4 +24,8 @@ The Bluetooth Low Energy battery-service adapter follows the [public trouble-hos
 Copyright Embassy contributors.
 The upstream example uses `MIT OR Apache-2.0`.
 
+The vendored `trouble-host` 0.8.0 library retains its Embassy contributor notices and [MIT](vendor/trouble-host/LICENSE-MIT) or [Apache-2.0](vendor/trouble-host/LICENSE-APACHE) license.
+The local patch retains ownership of initialized radio storage so replacement and destruction release packet buffers and task wakers.
+The [provenance record](vendor/trouble-host/UPSTREAM.toml) identifies the original archive and modified file.
+
 Espressif read-only memory, bootloader, and radio binary components keep their upstream licenses.

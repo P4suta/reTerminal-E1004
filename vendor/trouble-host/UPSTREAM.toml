@@ -1,0 +1,10 @@
+name = "trouble-host"
+version = "0.8.0"
+source = "https://crates.io/crates/trouble-host/0.8.0"
+commit = "42e3e04de00db3951b126741e1f3602bfdf5df47"
+retrieved = "2026-11-06"
+license = "MIT OR Apache-2.0"
+archive = "upstream.crate"
+sha256 = "19a566cc37ceaff5cc2a6ff8cc02debd1ee6b95d59ced8830d005da8b080cbe9"
+modified_files = ["src/lib.rs"]
+change = "Retain initialized backing-storage ownership with Option and insert."

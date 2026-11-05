@@ -666,11 +666,11 @@ pub struct HostResources<
     const BONDS: usize = 10,
 > {
     state: MaybeUninit<ManuallyDrop<host::HostState<'static, P>>>,
-    connections: MaybeUninit<RefCell<[ConnectionStorage<P::Packet>; CONNS]>>,
-    channels: MaybeUninit<RefCell<[ChannelStorage<P::Packet>; CHANNELS]>>,
-    advertise_handles: MaybeUninit<RefCell<[AdvHandleState; ADV_SETS]>>,
+    connections: Option<RefCell<[ConnectionStorage<P::Packet>; CONNS]>>,
+    channels: Option<RefCell<[ChannelStorage<P::Packet>; CHANNELS]>>,
+    advertise_handles: Option<RefCell<[AdvHandleState; ADV_SETS]>>,
     #[cfg(feature = "security")]
-    bond_storage: MaybeUninit<RefCell<Vec<BondInformation, BONDS>>>,
+    bond_storage: Option<RefCell<Vec<BondInformation, BONDS>>>,
 }
 
 impl<P: PacketPool, const CONNS: usize, const CHANNELS: usize, const ADV_SETS: usize, const BONDS: usize> Default
@@ -688,11 +688,11 @@ impl<P: PacketPool, const CONNS: usize, const CHANNELS: usize, const ADV_SETS: u
     pub const fn new() -> Self {
         Self {
             state: MaybeUninit::uninit(),
-            connections: MaybeUninit::uninit(),
-            channels: MaybeUninit::uninit(),
-            advertise_handles: MaybeUninit::uninit(),
+            connections: None,
+            channels: None,
+            advertise_handles: None,
             #[cfg(feature = "security")]
-            bond_storage: MaybeUninit::uninit(),
+            bond_storage: None,
         }
     }
 }
@@ -713,19 +713,19 @@ pub fn new<
 ) -> StackBuilder<'resources, C, P> {
     let connections: &'resources RefCell<[ConnectionStorage<P::Packet>]> = resources
         .connections
-        .write(RefCell::new([const { ConnectionStorage::new() }; CONNS]));
+        .insert(RefCell::new([const { ConnectionStorage::new() }; CONNS]));
 
     let channels: &'resources RefCell<[ChannelStorage<P::Packet>]> = resources
         .channels
-        .write(RefCell::new([const { ChannelStorage::new() }; CHANNELS]));
+        .insert(RefCell::new([const { ChannelStorage::new() }; CHANNELS]));
 
     let advertise_handles: &'resources RefCell<[AdvHandleState]> = resources
         .advertise_handles
-        .write(RefCell::new([AdvHandleState::None; ADV_SETS]));
+        .insert(RefCell::new([AdvHandleState::None; ADV_SETS]));
 
     #[cfg(feature = "security")]
     let bond_storage: &'resources RefCell<VecView<BondInformation>> =
-        resources.bond_storage.write(RefCell::new(Vec::new()));
+        resources.bond_storage.insert(RefCell::new(Vec::new()));
 
     // SAFETY: Narrows the host field's lifetime from `'static` to `'resources`. Sound because:
     // - HostState is covariant in 'd so the types differ only in a lifetime (identical layout).

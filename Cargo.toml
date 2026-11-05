@@ -5,11 +5,15 @@ members = [
   "crates/t133a01",
   "crates/e1004-bsp",
   "crates/device-ui",
+  "crates/device-runtime",
   "crates/preview",
   "crates/native-preview",
   "crates/web-preview",
 ]
 exclude = ["firmware", "fuzz", "vendor/trouble-host"]
+
+[patch.crates-io]
+trouble-host = { path = "vendor/trouble-host" }
 
 [workspace.package]
 version = "0.1.0"

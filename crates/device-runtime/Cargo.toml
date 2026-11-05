@@ -1,0 +1,42 @@
+[package]
+name = "device-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+virtual-time = ["embassy-time/mock-driver", "embassy-time/generic-queue-64"]
+ble = ["dep:trouble-host"]
+
+[dependencies]
+device-core = { path = "../device-core" }
+device-ui = { path = "../device-ui" }
+e1004-bsp = { path = "../e1004-bsp" }
+t133a01 = { path = "../t133a01" }
+embassy-sync = "=0.8.0"
+embassy-time = "=0.5.1"
+embassy-futures = "=0.1.2"
+heapless = "=0.9.3"
+nb = "=1.1.0"
+static_cell = "=2.1.1"
+trouble-host = { version = "=0.8.0", default-features = false, features = [
+  "peripheral",
+  "gatt",
+  "derive",
+], optional = true }
+
+[dev-dependencies]
+bt-hci = "=0.10.1"
+bt-hci-transport = "=0.1.0"
+embedded-io = "=0.7.1"
+critical-section = { version = "=1.2.0", features = ["std"] }
+embassy-time = { version = "=0.5.1", features = [
+  "mock-driver",
+  "generic-queue-64",
+] }
+
+[lints]
+workspace = true

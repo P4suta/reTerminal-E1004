@@ -1,0 +1,8 @@
+[build]
+target = "xtensa-esp32s3-none-elf"
+
+[target.xtensa-esp32s3-none-elf]
+rustflags = ["-C", "force-frame-pointers"]
+
+[env]
+ESP_HAL_CONFIG_ENSURE_MAIN_STACK_MINIMUM = "16384"
