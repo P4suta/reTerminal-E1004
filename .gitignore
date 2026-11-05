@@ -1,0 +1,10 @@
+/target/
+/firmware/target/
+/web/pkg/
+/web/output/
+/verification/results/
+/mutants.out/
+/.mise.local.toml
+!AGENTS.md
+/fuzz/target/
+/fuzz/artifacts/

@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/device-core",
+  "crates/t133a01",
+  "crates/e1004-bsp",
+  "crates/device-ui",
+]
+exclude = ["firmware", "fuzz", "vendor/trouble-host"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[workspace.lints.clippy]
+mem_forget = "deny"
+
+[profile.release]
+lto = "thin"
+overflow-checks = true

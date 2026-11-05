@@ -1,0 +1,13 @@
+[package]
+name = "t133a01"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+device-core = { path = "../device-core" }
+
+[lints]
+workspace = true

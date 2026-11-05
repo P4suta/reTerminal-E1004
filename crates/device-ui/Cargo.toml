@@ -1,0 +1,15 @@
+[package]
+name = "device-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+device-core = { path = "../device-core" }
+embedded-graphics = "=0.8.2"
+tinybmp = "=0.6.0"
+
+[lints]
+workspace = true

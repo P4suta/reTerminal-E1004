@@ -1,2 +1,3 @@
 fuzz/corpus/** binary
 .agents/skills/reterminal-e1004/references/upstream/** -text -whitespace linguist-vendored
+vendor/trouble-host/** -text -whitespace linguist-vendored

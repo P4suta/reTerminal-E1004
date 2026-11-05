@@ -1,0 +1,27 @@
+Copyright 2026 Yasunobu.
+Original Rust code and documentation use `MIT OR Apache-2.0`.
+Preserved third-party materials keep their publisher licenses and notices.
+The [preserved source catalog](.agents/skills/reterminal-e1004/references/source-catalog.md) identifies their attribution, licenses, and original locations.
+
+The T133A01 register data and protocol order follow the [pinned Seeed source](https://github.com/Seeed-Studio/Seeed_GFX/blob/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/TFT_Drivers/T133A01_Defines.h).
+The [upstream license](https://github.com/Seeed-Studio/Seeed_GFX/blob/0dfdd7135425be82b5bb4b4b58d74dd51ab29a59/license.txt) supplies the following notice.
+
+```text
+Software License Agreement (FreeBSD License)
+Copyright (c) 2023 Bodmer (https://github.com/Bodmer)
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+The views and conclusions contained in the software and documentation are those of the authors and should not be interpreted as representing official policies, either expressed or implied, of the FreeBSD Project.
+```
+
+The Bluetooth Low Energy battery-service adapter follows the [public trouble-host example](https://github.com/embassy-rs/trouble/tree/a4bbe5510fc7f88d52b30ce3c5a25de25567aa96).
+Copyright Embassy contributors.
+The upstream example uses `MIT OR Apache-2.0`.
+
+Espressif read-only memory, bootloader, and radio binary components keep their upstream licenses.

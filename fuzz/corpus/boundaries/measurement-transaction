@@ -1,0 +1,6 @@
+measurements 2026-11-05T19:30:00 -0.01 100.00 2000 charging ready connected disconnected
+wait
+next
+tick 120000
+immediate
+refresh

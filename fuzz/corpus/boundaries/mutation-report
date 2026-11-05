@@ -1,0 +1,1 @@
+{"total_mutants":1,"caught":1,"unviable":0,"missed":0,"timeout":0,"success":0,"cargo_mutants_version":"27.1.0","outcomes":[{"scenario":"Baseline","summary":"Success"},{"scenario":{"Mutant":{"name":"broken behavior","file":"crates/preview/src/lib.rs"}},"summary":"CaughtMutant"}]}

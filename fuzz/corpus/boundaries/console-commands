@@ -1,0 +1,5 @@
+status
+interval 900
+rtc 2026-11-05T19:30:00
+wifi scan
+ble on
