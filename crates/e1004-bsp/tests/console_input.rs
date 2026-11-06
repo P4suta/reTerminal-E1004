@@ -3,6 +3,15 @@ use e1004_bsp::console::{parse, Command, LineInput, LineResult, ParseError};
 
 #[test]
 fn console_and_line_input() {
+    assert!(parse("help").is_ok());
+    for (error, reason) in [
+        (ParseError::Unknown, "Unknown"),
+        (ParseError::Invalid, "argument"),
+        (ParseError::TooLong, "shorter"),
+    ] {
+        assert!(error.message().contains(reason));
+        assert!(error.message().contains("help"));
+    }
     for (line, expected) in [
         ("status", Command::Status),
         ("diagnose", Command::Diagnose),

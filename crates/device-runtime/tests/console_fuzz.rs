@@ -68,8 +68,23 @@ pub fn check(data: &[u8]) {
         }
         drop(operation);
         let accepted = accepted.expect("console command exceeded its virtual-time bound");
+        if line == "help" && serial.mode == 0 {
+            assert!(accepted, "the serial console must expose its command help");
+            let output = core::str::from_utf8(&serial.output).unwrap();
+            for command in [
+                "status", "refresh", "interval", "rtc", "resume", "wifi", "ble",
+            ] {
+                assert!(output.contains(command), "help omits {command}");
+            }
+            assert!(output.contains("60") && output.contains("86400"));
+        }
         if e1004_bsp::console::parse(line).is_err() {
             assert!(!accepted);
+            if serial.mode == 0 {
+                let output = core::str::from_utf8(&serial.output).unwrap();
+                assert!(output.contains("event=command_rejected"));
+                assert!(output.contains("help"));
+            }
             assert!(system.events.is_empty() && system.bus.is_empty());
             assert!(!system.measure.signaled() && !system.rtc_set.signaled());
             assert!(system.wifi_command.is_empty() && !system.ble_enabled.signaled());
@@ -79,6 +94,23 @@ pub fn check(data: &[u8]) {
         }
         if !system.capabilities.ble {
             assert!(!system.ble_enabled.signaled());
+        }
+        match e1004_bsp::console::parse(line) {
+            Ok(e1004_bsp::console::Command::Ble(enabled)) if system.capabilities.ble => {
+                assert!(accepted);
+                assert_eq!(system.ble_enabled.try_take(), Some(enabled));
+                assert!(serial.output.is_empty());
+            }
+            Ok(
+                e1004_bsp::console::Command::WifiScan
+                | e1004_bsp::console::Command::WifiDisconnect
+                | e1004_bsp::console::Command::WifiConnect { .. },
+            ) if system.capabilities.wifi => {
+                assert!(accepted);
+                assert!(!system.wifi_command.is_empty());
+                assert!(serial.output.is_empty());
+            }
+            _ => {}
         }
         assert!(serial.output.len() <= 1024);
         if let Ok(e1004_bsp::console::Command::WifiConnect { .. }) = e1004_bsp::console::parse(line)

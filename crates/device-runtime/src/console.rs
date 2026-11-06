@@ -3,8 +3,12 @@ use crate::{
     state::{BusRequest, LogRecord, System, WifiCommand},
 };
 use core::{fmt::Write, sync::atomic::Ordering};
-use device_core::{app::AppEvent, settings::Settings, telemetry::*};
-use e1004_bsp::console::{parse, Command, LineInput, LineResult};
+use device_core::{
+    app::AppEvent,
+    settings::{Settings, MAX_REFRESH_SECONDS, MIN_REFRESH_SECONDS},
+    telemetry::*,
+};
+use e1004_bsp::console::{parse, Command, LineInput, LineResult, ParseError};
 use embassy_futures::select::{select, Either};
 use embassy_time::{Instant, Timer};
 
@@ -57,7 +61,34 @@ async fn bus_command(system: &System, request: BusRequest) -> bool {
 }
 
 pub async fn command(system: &System, io: &mut impl ConsoleIo, line: &str) -> bool {
-    match parse(line) {
+    dispatch(system, io, parse(line)).await
+}
+
+async fn dispatch(
+    system: &System,
+    io: &mut impl ConsoleIo,
+    parsed: Result<Command<'_>, ParseError>,
+) -> bool {
+    match parsed {
+        Ok(Command::Help) => {
+            return emit(
+                io,
+                format_args!(
+                    concat!(
+                        "event=help\r\n",
+                        "status | diagnose | refresh | sleep\r\n",
+                        "interval SECONDS ({} to {} seconds)\r\n",
+                        "rtc YYYY-MM-DDTHH:MM:SS (2000 to 2099)\r\n",
+                        "resume last | resume status\r\n",
+                        "wifi scan | wifi disconnect | wifi connect SSID<TAB>PASSWORD\r\n",
+                        "ble on | ble off\r\n",
+                        "Wi-Fi and BLE commands require their firmware features.\r\n"
+                    ),
+                    MIN_REFRESH_SECONDS, MAX_REFRESH_SECONDS
+                ),
+            )
+            .await;
+        }
         Ok(Command::Refresh) => {
             system
                 .events
@@ -185,7 +216,20 @@ pub async fn command(system: &System, io: &mut impl ConsoleIo, line: &str) -> bo
             );
         }
         Ok(Command::Ble(enabled)) => system.ble_enabled.signal(enabled),
-        Err(_) => return false,
+        Err(error) => {
+            if !emit(
+                io,
+                format_args!(
+                    "event=command_rejected kind={error:?} message={:?}\r\n",
+                    error.message()
+                ),
+            )
+            .await
+            {
+                system.lost_logs.fetch_add(1, Ordering::Relaxed);
+            }
+            return false;
+        }
     }
     true
 }
@@ -195,7 +239,7 @@ pub async fn console_loop(system: &System, mut io: impl ConsoleIo, version: &str
     let mut quiet = false;
     if !emit(
         &mut io,
-        format_args!("event=console_ready version={version}\r\n"),
+        format_args!("event=console_ready version={version} hint=help\r\n"),
     )
     .await
     {
@@ -279,16 +323,26 @@ pub async fn console_loop(system: &System, mut io: impl ConsoleIo, version: &str
                 };
                 match lines.push(byte) {
                     LineResult::Complete => {
-                        if let Ok(line) = lines.line() {
-                            if !command(system, &mut io, line).await
-                                && !emit(&mut io, format_args!("event=command_rejected\r\n")).await
-                            {
-                                system.lost_logs.fetch_add(1, Ordering::Relaxed);
+                        match lines.line() {
+                            Ok(line) => {
+                                let parsed = parse(line);
+                                let invalid = parsed.is_err();
+                                if !dispatch(system, &mut io, parsed).await
+                                    && !invalid
+                                    && !emit(&mut io, format_args!("event=command_rejected message=\"Command not completed. Run status, then retry.\"\r\n")).await
+                                {
+                                    system.lost_logs.fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+                            Err(_) => {
+                                if !emit(&mut io, format_args!("event=command_rejected kind=InvalidText message=\"Command must be UTF-8. Enter help for supported commands.\"\r\n")).await {
+                                    system.lost_logs.fetch_add(1, Ordering::Relaxed);
+                                }
                             }
                         }
                     }
                     LineResult::TooLong => {
-                        if !emit(&mut io, format_args!("event=line_too_long\r\n")).await {
+                        if !emit(&mut io, format_args!("event=line_too_long message={:?}\r\n", ParseError::TooLong.message())).await {
                             system.lost_logs.fetch_add(1, Ordering::Relaxed);
                         }
                     }

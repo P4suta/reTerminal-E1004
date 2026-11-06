@@ -1160,6 +1160,22 @@ fn console_counts_output_failures_rejects_invalid_progress_and_recovers() {
         board.command("unknown-command");
         executor.advance(20);
         assert!(board.output().contains("event=command_rejected"));
+        assert!(board.output().contains("Enter help"));
+        assert_eq!(board.output().matches("event=command_rejected").count(), 1);
+        board.command("help");
+        executor.advance(20);
+        assert!(board
+            .output()
+            .contains("interval SECONDS (60 to 86400 seconds)"));
+        board.0.borrow_mut().uart_rx.extend([u8::MAX, b'\n']);
+        executor.advance(20);
+        assert!(board.output().contains("kind=InvalidText"));
+        board.command(&"x".repeat(257));
+        board.command("help");
+        executor.advance(200);
+        assert!(board.output().contains("event=line_too_long message="));
+        assert_eq!(board.output().matches("event=help").count(), 2);
+        assert!(system.events.is_empty() && system.bus.is_empty());
     }
     for behavior in [
         SerialWrite::Zero,
@@ -1229,6 +1245,48 @@ fn console_counts_output_failures_rejects_invalid_progress_and_recovers() {
             system.lost_logs.load(std::sync::atomic::Ordering::Relaxed),
             4
         );
+    }
+    for behavior in [SerialWrite::Full, SerialWrite::Fault] {
+        embassy_time::MockDriver::get().reset();
+        let system = System::new(Radios {
+            wifi: false,
+            ble: false,
+        });
+        let board = Board::new();
+        board.0.borrow_mut().serial_write = SerialWrite::Full;
+        let mut executor = Executor::new();
+        executor.spawn(console_loop(&system, board.clone(), "fixture"));
+        executor.advance(20);
+        while system
+            .bus
+            .try_send(device_runtime::state::BusRequest::Diagnose)
+            .is_ok()
+        {}
+        board.0.borrow_mut().serial_write = behavior;
+        for (input, response) in [
+            (b"unknown-command\n".to_vec(), "event=command_rejected"),
+            (vec![u8::MAX, b'\n'], "kind=InvalidText"),
+            (
+                format!("{}\n", "x".repeat(300)).into_bytes(),
+                "event=line_too_long",
+            ),
+            (b"interval 60\n".to_vec(), "Command not completed"),
+        ] {
+            let before_lost = system.lost_logs.load(std::sync::atomic::Ordering::Relaxed);
+            let before_output = board.output().len();
+            board.0.borrow_mut().uart_rx.extend(input);
+            executor.advance(200);
+            assert_eq!(
+                system.lost_logs.load(std::sync::atomic::Ordering::Relaxed),
+                before_lost + u32::from(matches!(behavior, SerialWrite::Fault))
+            );
+            let output = board.output();
+            if matches!(behavior, SerialWrite::Full) {
+                assert_eq!(output[before_output..].matches(response).count(), 1);
+            } else {
+                assert_eq!(output.len(), before_output);
+            }
+        }
     }
 }
 

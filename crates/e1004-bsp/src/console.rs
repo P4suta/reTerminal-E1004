@@ -1,5 +1,6 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command<'a> {
+    Help,
     Status,
     Diagnose,
     Refresh,
@@ -20,6 +21,16 @@ pub enum ParseError {
     TooLong,
 }
 
+impl ParseError {
+    pub const fn message(&self) -> &'static str {
+        match self {
+            Self::Unknown => "Unknown command. Enter help for supported commands.",
+            Self::Invalid => "Invalid argument. Enter help for accepted formats and limits.",
+            Self::TooLong => "Command too long. Send a shorter line, then enter help.",
+        }
+    }
+}
+
 pub fn parse(line: &str) -> Result<Command<'_>, ParseError> {
     if line.len() > MAX_LINE_BYTES {
         return Err(ParseError::TooLong);
@@ -35,6 +46,7 @@ pub fn parse(line: &str) -> Result<Command<'_>, ParseError> {
     }
     let line = line.trim();
     match line {
+        "help" => Ok(Command::Help),
         "status" => Ok(Command::Status),
         "diagnose" => Ok(Command::Diagnose),
         "refresh" => Ok(Command::Refresh),

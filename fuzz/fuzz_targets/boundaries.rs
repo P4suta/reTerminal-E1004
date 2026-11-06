@@ -112,6 +112,7 @@ fuzz_target!(|data: &[u8]| {
             if let Ok(command) = e1004_bsp::console::parse(text) {
                 use e1004_bsp::console::Command;
                 let canonical = match &command {
+                    Command::Help => "help".into(),
                     Command::Status => "status".into(),
                     Command::Diagnose => "diagnose".into(),
                     Command::Refresh => "refresh".into(),
