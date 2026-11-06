@@ -57,3 +57,6 @@ check-assurance:
 
 verification-image:
     cargo run --locked -p xtask -- verification-image
+
+verification task:
+    cargo test --locked -p device-runtime --all-features --test assurance -- {{ task }}

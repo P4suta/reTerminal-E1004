@@ -391,6 +391,7 @@ dependencies = [
  "embedded-io",
  "heapless",
  "nb 1.1.0",
+ "serde_json",
  "static_cell",
  "t133a01",
  "trouble-host",
