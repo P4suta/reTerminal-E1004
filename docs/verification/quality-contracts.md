@@ -26,6 +26,15 @@ Periodic measurement scheduling remains covered by the app transition tests rath
 
 ## Measurements and recordings
 
+The original browser checked submitted errors but didn't test native constraint enforcement or errors surviving unrelated actions.
+The form bypassed native validation, and every action cleared field validation.
+Native form validation and the shared Rust draft validator now reject out-of-range submissions without changing the frame or recording.
+The browser exercises every numeric field's rejected boundaries, keyboard submission, error persistence, correction, and mutually exclusive completion selection.
+The native date control normalizes zero seconds away.
+The preview preserves minute-precision dates by adding only zero seconds before the existing calendar parser.
+A source-bound proof checks byte preservation and suffix construction for every byte value at input lengths up to 20.
+The existing parser remains responsible for calendar validity and the supported century.
+
 A measurement submission validates every field before changing app state, display requests, or the recording.
 The browser accepts temperature in degrees Celsius and relative humidity from 0% to 100%.
 Exact decimal parsing avoids floating-point rounding.
@@ -40,6 +49,13 @@ Command, form, and replay fuzzing checks failed-operation atomicity and canonica
 Fixed corpus entries preserve the measurement transaction and timeout-mode reproducer.
 
 ## Peripheral failure injection
+
+The console rejected unknown or invalid commands without explaining recovery and provided no help command.
+Its earlier tests checked command execution and output failures without requiring discoverable instructions.
+Help now reports formats and actual interval limits, while static parse-error messages direct the operator to help without echoing input.
+The production console tests cover partial writes, failed output, malformed text, oversize input, recovery, and exactly one rejection response.
+The earlier corpus asserted that unavailable radios stayed inactive without requiring available radio commands to emit their requested effects.
+The dispatcher corpus now checks both capability cases, and the console-loop matrix checks successful and failed responses for every rejection path.
 
 The panel test injects a transport failure at all 3,236 fallible operations across initialization, both controller transfers, and sleep.
 It checks that transfer cleanup runs, later phases stop, the original error survives cleanup failure, and another display requires successful reinitialization.
@@ -70,6 +86,11 @@ The fixtures now compile for unit tests, whose independent state table checks pr
 The Kani harness checks constructor inputs before assuming the state invariant.
 
 ## Mutation execution and result authority
+
+The former board support package mutation shortcut mounted the live workspace instead of using the shared source capture.
+A firmware build removed an object while a mutation worker copied that build directory.
+The board support package selection now uses the same immutable workspace copy, source identity, artifact binding, and owned-result registry as the other mutation selections.
+The scope test requires its receipt, while the shared snapshot test rejects build directories at every workspace level.
 
 Mutation testing covers the core, preview, portable panel driver, and production runtime tasks.
 Two fixed round-robin core shards keep each experiment within the container budget while retaining the complete selection.

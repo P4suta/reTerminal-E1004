@@ -66,6 +66,7 @@ fn every_produced_receipt_has_one_authoritative_scope() {
         "mutations",
         "mutations-preview",
         "mutations-panel",
+        "mutations-bsp",
         "fuzz",
         "miri",
     ] {
@@ -232,6 +233,7 @@ fn independent_verification_tasks_cannot_overwrite_each_others_results() {
         "mutations",
         "mutations-preview",
         "mutations-panel",
+        "mutations-bsp",
         "fuzz",
         "miri",
     ];

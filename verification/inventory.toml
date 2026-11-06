@@ -53,6 +53,7 @@ preview_mutation_files = [
 ]
 
 panel_mutation_files = ["crates/t133a01/src/lib.rs"]
+bsp_mutation_files = ["crates/e1004-bsp/src/console.rs"]
 
 runtime_mutation_files = [
   "crates/device-runtime/src/policy.rs",

@@ -187,7 +187,7 @@ pub fn receipt_scope(name: &str) -> Result<&'static [&'static str], &'static str
             "crates/device-ui/src",
         ]),
         "panel-mutations" | "miri-panel" => Ok(&["crates/t133a01", "crates/device-core/src"]),
-        "miri-bsp" => Ok(&[
+        "bsp-mutations" | "miri-bsp" => Ok(&[
             "crates/device-core/src",
             "crates/e1004-bsp",
             "firmware/src/effects.rs",
@@ -337,6 +337,7 @@ pub fn result_artifacts(task: &str) -> Result<&'static [&'static str], &'static 
         "mutations-core-shard-1" => Ok(&["core-mutations-1.json", "core-mutations-1"]),
         "mutations-preview" => Ok(&["preview-mutations.json", "preview-mutations"]),
         "mutations-panel" => Ok(&["panel-mutations.json", "panel-mutations"]),
+        "mutations-bsp" => Ok(&["bsp-mutations.json", "bsp-mutations"]),
         "fuzz" => Ok(&["bounded-fuzz.json"]),
         "miri" => Ok(&[
             "miri-inventory.json",

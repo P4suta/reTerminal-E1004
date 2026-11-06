@@ -158,54 +158,6 @@ fn report(method: &str, bounds: &str, cases: &[(&str, u64)]) -> CheckResult<()> 
     Ok(())
 }
 
-fn copy_tree(source: &Path, target: &Path) -> CheckResult<()> {
-    fs::create_dir_all(target)?;
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let target = target.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_tree(&entry.path(), &target)?;
-        } else {
-            fs::copy(entry.path(), target)?;
-        }
-    }
-    Ok(())
-}
-
-fn board_mutations() -> CheckResult<()> {
-    let image = fs::read_to_string("target/host-verification-image.id")?;
-    run(Command::new("dotfiles").args([
-        "bounded",
-        "run",
-        "--image",
-        image.trim(),
-        "--project",
-        ".",
-        "--",
-        "cargo",
-        "mutants",
-        "--package",
-        "e1004-bsp",
-        "--file",
-        "crates/e1004-bsp/src/console.rs",
-        "--jobs",
-        "2",
-        "--no-shuffle",
-        "--timeout",
-        "60",
-        "--output",
-        "/work/verification/results/bsp-campaign",
-    ]))?;
-    let target = Path::new("verification/results/bsp-mutations");
-    if target.exists() {
-        fs::remove_dir_all(target)?;
-    }
-    copy_tree(
-        Path::new("verification/results/bsp-campaign/mutants.out"),
-        target,
-    )
-}
-
 fn main() -> CheckResult<()> {
     std::env::set_current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))?;
     match std::env::args().nth(1).as_deref() {
@@ -235,7 +187,6 @@ fn main() -> CheckResult<()> {
                 &[("settings-console-corpus", 10000)],
             )
         }
-        Some("mutations-bsp") => board_mutations(),
         Some(task) if task.starts_with("mutations-") || task.starts_with("proofs-") => {
             run(Command::new("cargo").args(["run", "--locked", "-p", "xtask", "--", task]))?;
             Ok(())

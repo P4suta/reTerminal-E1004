@@ -78,6 +78,7 @@ Flash behavior under a brownout and battery-life prediction also require physica
 The core runs in two fixed round-robin shards, each with its own bounded container.
 The runtime runs in four fixed round-robin shards over its measurement, policy, task, button, console, state, Wi-Fi, BLE, and packet-pool modules.
 Each worker uses a separate mutation build directory.
+`mise x -- just verification mutations-bsp` checks the console parser through the same captured-source runner and records an owned result.
 Inspect every survivor and add a behavioral assertion for a real missing invariant.
 Distinguish equivalent behavior, build rejection, timeout, infrastructure failure, and an observable regression.
 Don't suppress a production function to raise the mutation score.

@@ -78,7 +78,10 @@ fn current(name: &str, success: bool) -> Result<String, Box<dyn Error + Send + S
     }
     if name.starts_with("core-mutations-")
         || name.starts_with("runtime-mutations-")
-        || matches!(name, "preview-mutations" | "panel-mutations")
+        || matches!(
+            name,
+            "preview-mutations" | "panel-mutations" | "bsp-mutations"
+        )
     {
         let bytes = fs::read(format!("verification/results/{name}/outcomes.json"))?;
         if receipt.artifact_sha256.as_deref()
@@ -144,6 +147,7 @@ pub fn check_results() -> VerifyResult {
         ("core-mutations-1", "mutation_files"),
         ("preview-mutations", "preview_mutation_files"),
         ("panel-mutations", "panel_mutation_files"),
+        ("bsp-mutations", "bsp_mutation_files"),
         ("runtime-mutations-0", "runtime_mutation_files"),
         ("runtime-mutations-1", "runtime_mutation_files"),
         ("runtime-mutations-2", "runtime_mutation_files"),
@@ -214,7 +218,7 @@ pub fn check_results() -> VerifyResult {
     for case in xtask::evidence::MIRI_BLE_CASES {
         verify_interpreter_case(&current(case.task, true)?, case.filter)?;
     }
-    println!("Current source identities match: 32 Kani harnesses, false-claim rejection, four mutation suites with no survivors or timeouts, 10000 fuzz inputs, and 22 Miri tests");
+    println!("Current source identities and declared proof, mutation, fuzz, and interpreter inventories passed");
     println!(
         "Mutation summary: {}",
         mutations
@@ -921,6 +925,7 @@ pub fn inside(task: &str) -> VerifyResult {
             None,
         ),
         "mutations-panel" => mutations("t133a01", "panel_mutation_files", "panel-mutations", None),
+        "mutations-bsp" => mutations("e1004-bsp", "bsp_mutation_files", "bsp-mutations", None),
         "fuzz" => {
             let corpus = Path::new("fuzz/corpus/boundaries");
             if fs::read_dir(corpus)?.count() == 0 {
@@ -1119,7 +1124,12 @@ pub fn bounded(task: &str) -> VerifyResult {
         return Ok(());
     }
     if task == "mutations-all" {
-        for suite in ["mutations", "mutations-preview", "mutations-panel"] {
+        for suite in [
+            "mutations",
+            "mutations-preview",
+            "mutations-panel",
+            "mutations-bsp",
+        ] {
             bounded(suite)?;
         }
         for shard in xtask::evidence::RUNTIME_MUTATION_SHARDS {

@@ -431,6 +431,7 @@ fn execute() -> TaskResult {
         | "mutations-core"
         | "mutations-preview"
         | "mutations-panel"
+        | "mutations-bsp"
         | "mutations-core-shard-0"
         | "mutations-core-shard-1"
         | "fuzz"

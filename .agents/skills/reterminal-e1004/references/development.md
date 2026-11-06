@@ -107,6 +107,17 @@ Every field has an explicit label under the [W3C labeling guidance](https://www.
 The interface preserves visible [keyboard focus](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html) and [heading order](https://www.w3.org/WAI/tutorials/page-structure/headings/).
 The screen-information region exposes state as text alongside the canvas.
 The form applies [W3C validation guidance](https://www.w3.org/WAI/tutorials/forms/validation/) through exact Rust decimal parsing and validated measurement types.
+Native date and number controls enforce their ranges and increments through the [HTML input contract](https://html.spec.whatwg.org/multipage/input.html#the-min-and-max-attributes).
+The date control accepts device local time at minute or second precision.
+Draft validation calls the same Rust validator as submission without changing device state or recording events.
+Inline field errors preserve input and keyboard focus while editing.
+An invalid submission focuses the field with the correction message.
+Unrelated display and recording actions preserve field errors.
+Completion uses native radio inputs with one selected mode under the [W3C radio group pattern](https://www.w3.org/WAI/ARIA/apg/patterns/radio/).
+Action availability includes a visible explanation.
+Controls and radio labels provide at least 44 by 44 CSS pixels under [Target Size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced.html).
+The black focus outline follows [Focus Appearance](https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html).
+The focused checks cover the affected controls and don't establish complete accessibility conformance.
 Errors name the field and correction, associate the message with the control, and focus the invalid control under [W3C notification guidance](https://www.w3.org/WAI/tutorials/forms/notifications/).
 Submission uses the native form and submit-button contract, including Enter.
 Controls avoid names that shadow methods under the [native form interface](https://html.spec.whatwg.org/multipage/forms.html#the-form-element).
@@ -126,6 +137,10 @@ Regular measurements and manual refresh update that sample.
 `diagnose` prints the expansion sample, exercises the status light and buzzer, and writes and reads `E1004.TXT` on a present card.
 The diagnostic file uses a reserved name and each diagnostic replaces its contents.
 Use `status`, `diagnose`, `refresh`, `sleep`, `interval SECONDS`, and `rtc YYYY-MM-DDTHH:MM:SS` through the console.
+Enter `help` for supported commands, argument formats, and interval limits.
+The startup message advertises help, and rejected input reports a correction without echoing credentials.
+Console guidance also follows the [WCAG2ICT text-interface guidance](https://www.w3.org/TR/wcag2ict-22/#text-command-line-terminal-applications-and-interfaces).
+WCAG2ICT is informative guidance for software rather than a hardware conformance claim.
 `resume last` restores the selected screen after sleep or restart and is the default.
 `resume status` selects Status on every restart.
 The status response includes the current policy and saved screen.
