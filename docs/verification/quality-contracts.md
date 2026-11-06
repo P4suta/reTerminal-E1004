@@ -60,6 +60,15 @@ The same edition's section 4.6 supplies the conversion equations.
 These checks establish codec behavior and fault handling under the transport assumptions.
 They don't establish sensor calibration, flash behavior during a physical brownout, or electrical timing.
 
+The earlier console round-trip check started with parser output.
+It couldn't detect a valid command rejected before decoding or bytes discarded during trimming.
+The parser now preserves the tab separator and password spaces.
+Generated valid credentials must decode exactly, including an empty password.
+The source-bound obligation checks every pair of byte lengths.
+The first mutation selection for the board support package also included fixtures compiled only for Kani.
+The fixtures now compile for unit tests, whose independent state table checks preserved constructor fields, state admission, and one-byte transitions.
+The Kani harness checks constructor inputs before assuming the state invariant.
+
 ## Mutation execution and result authority
 
 Mutation testing covers the core, preview, portable panel driver, and production runtime tasks.
@@ -143,6 +152,50 @@ Separate observations establish button feel, viewing quality, refresh latency, a
 
 ## Production task composition
 
+The original startup transition emitted measurement and display actions together.
+The task tests accepted any nonempty list of frames, and the pure proof only excluded overlapping display operations.
+Neither condition excluded displaying unavailable values before measurement.
+Display admission now requires measurement completion, and repeated Refresh requests share the current measurement.
+The startup regression requires exactly one frame after a healthy or missing-sensor measurement.
+The stress regression supplies 1,000 input requests during measurement and requires one final display before sleep.
+A source-bound proof excludes measurement, display, and sleep actions while a measurement remains outstanding.
+The finite event model independently checks measurement ownership, navigation indices, fault identity, display ownership, and sleep admission over every five-event word from nine event kinds.
+
+The earlier screen matrix supplied a wake reason at boot but stopped after sleep.
+The separate restart scenario checked interval recovery from the default screen.
+Neither scenario checked navigation across a newly constructed task graph.
+The matrix now restarts production tasks for every radio, orientation, and screen combination.
+Separate cases cover every published wake reason and both resume policies.
+The settings format keeps backward compatibility while the runtime commits changed navigation after quiescence.
+Assertions check the persisted screen and forbid another flash write on an unchanged wake.
+Policy-switch tests also forbid replacing the active screen with the prior policy's projected screen.
+The first policy-switch case covered one direction.
+The expanded case switches both policies from every active screen and checks the saved value before sleep.
+Changing only the policy for screen restoration preserves the refresh deadline and starts no display operation.
+
+The earlier runtime fixture declared a settings-failure switch without executing it in its task tests.
+Low-level interrupted-write tests established record recovery without checking the app's diagnostic projection.
+Failure to save settings entered the SD status event and never updated the app's last error.
+Dedicated settings-failure events now preserve the SD result and identify settings flash explicitly.
+SD failures independently record their own fault, while successful card status updates preserve error history.
+Diagnostics must redraw after a fault identity change even when the card status stays the same.
+The runtime matrix measures the successful transaction's operation count before injecting a fault at each operation across all three card states.
+Every case requires exactly one injection hit, correct diagnostics, unchanged active settings, and a successful later save.
+Automatic retention failures use the same handler and must stop retrying the same failed value before sleep.
+The test registry makes removal or omission of these scenarios fail the required gate.
+The first affected core mutation run exposed a gap between package boundaries.
+Runtime tests checked projected settings, while core-only mutation runs didn't execute those tests.
+The core contract now checks every screen policy, screen, orientation, and interval boundary through the settings projection.
+A second gap recorded the fault without asserting which screen should redraw.
+Core tests now check error attribution, redraw admission, and pending work across every screen, measurement state, and display state.
+The settings-fault proof checked attribution without redraw admission.
+Its source-bound assertions now check both properties and preserve work in progress.
+The preview drains simulated measurement and display events through an explicit loop over the production event step.
+Recursive dispatch and the monolithic drain-loop proof each exceeded the fixed memory limit without a verdict.
+The source-bound proof now starts with an active display, checks timeout cancellation, changes completion mode, and checks an arbitrary late completion through the production step.
+Both steps must return no follow-up event.
+Host sequence tests exercise the complete dispatcher.
+
 The earlier preview and portable driver tests used a different scheduler and immediately ready transport futures.
 Compilation checked the target types but never executed the firmware's composition of signals, queues, cancellation, and sleep.
 That boundary allowed a sleep predicate to require a flag already consumed by `Action::Sleep`.
@@ -157,6 +210,10 @@ Panel failure reporting now revokes sleep and accepts faults only for the active
 The transition tests cover idle, updating, and failed states, every fault, stale identifiers, and wrapping identifiers.
 The task test injects the actual sleep transport error and requires a visible fault with no deep-sleep entry.
 The core proof covers current and stale failure generations.
+The busy-panel test had a masked-result gap.
+The timer task had already reported the expected timeout before the adapter returned.
+Separate adapter cases omit the timer task and check deadline, cancellation, invalid frames, transport errors, and cleanup directly.
+The fault policy uses an exhaustive error match with a source-bound proof, so an added driver error requires a classification decision.
 
 Console output and controller shutdown need a shared quiescence contract.
 The earlier console acknowledged a flush but still drained later logs, and a scan could finish after that acknowledgment.
@@ -283,6 +340,11 @@ Build directories, Git state, and previous verification results never enter that
 The capture rejects symbolic links and pre-existing destinations.
 Tests change the live source after capture and require the copy's original bytes to remain intact.
 Each task publishes only its registered artifacts after executing its captured source.
+
+The first source-bound fuzz adapter read only standard output from a successful native receipt.
+LibFuzzer wrote its completion record to standard error, so the adapter rejected a completed campaign.
+The shared completion predicate now requires a successful exit and a complete record on either process stream.
+Regression cases cover each stream, missing stream fields, failed exits, empty or incomplete counts, and fragments split across streams.
 
 ## Target and physical boundaries
 

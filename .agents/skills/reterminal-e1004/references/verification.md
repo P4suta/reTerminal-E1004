@@ -21,6 +21,10 @@ The project keeps the required vendor version and reports those maintenance risk
 Tests cover every pixel in every rotation, both controller halves, pack boundaries, and battery anchors.
 They also cover settings corruption, interrupted slot writes, invalid real-time clock values, and sensor cyclic redundancy checks.
 Transition tests cover rapid input, coalescing, timeout, and removed storage.
+Startup tests require exactly one completed-measurement frame for healthy and absent sensors.
+The screen matrix starts fresh production tasks after sleep and checks the restored screen and unchanged flash write count.
+The settings fault matrix derives every injection point from a successful transaction and requires each injection to fire.
+It checks independent SD status, the settings fault, the unacknowledged interval, and recovery.
 The [quality contracts](../../../../docs/verification/quality-contracts.md) map failure classes to their enforcement boundary, independent checks, and unresolved assumptions.
 The T133A01 trace test compares the complete initialization sequence with the pinned vendor sequence and checks transfer sizes and phase ordering.
 Fault injection exercises a failure at each slot-storage operation and Serial Peripheral Interface (SPI) cleanup after a failed transfer.
@@ -53,8 +57,16 @@ It checks the stored length, exact byte preservation, and visible formatting-err
 The production writer accepts `str` and delegates its full byte slice to the helper.
 Rust's string type and standard-library UTF-8 validation remain trusted boundaries.
 The console proof checks one arbitrary transition from every admitted control state, with payload bytes set to zero because the transition never branches on stored payload bytes.
+The policy decoder proof checks every ASCII value of up to six bytes using independent byte predicates.
+Console tests check both commands with every ASCII trailing byte through the complete parser.
+The standard library's string trimming remains a trusted boundary and also receives fuzz inputs.
 Kani checks host Rust integer semantics with explicit buffer limits below the 32-bit address range.
 The proofs don't model the executor, vendor libraries, physical memory, or interrupt timing.
+The preview cancellation proof calls the production event step for an active timeout and a failed late completion.
+It covers arbitrary operation identifiers and every orientation.
+Each step must return no follow-up event.
+Host sequence tests exercise the complete drain loop.
+Core proofs also check measurement admission, component-specific settings faults, saved-screen projection, and format 1 compatibility.
 Runtime proofs check sleep admission across every quiet boundary, emitted sleep actions, display generations, charger bits, owned packet reservations, and boot recovery with independent slot-read failures.
 The boot proof makes failed reads write valid-looking newer records before returning an error and checks that the runtime discards those bytes.
 The pinned panel source specifies `BUSY` high as ready.
@@ -78,6 +90,9 @@ The interpreted UI test checks that a capacity failure replaces partial text wit
 The six replay tests keep their full-frame comparisons and run as separate bounded cases with at most two cases concurrently.
 The gate compares their case registry with Cargo's complete replay-test inventory and requires a named pass for every case.
 Runtime measurement and sleep-policy tests run under the same interpreter.
+`mise x -- just verification model` enumerates all five-event words over nine app events and runs the restart and settings-fault matrices.
+Its report counts 295,245 concrete transitions under that finite bound.
+`mise x -- just verification fuzz` wraps the pinned sanitizer campaign in a source-bound result producer.
 The owned packet test allocates and releases the complete bounded pool with disjoint inline buffers.
 The real BLE host's protocol, restart, and cached-battery scenarios run as separate bounded cases without removing assertions.
 Aliasing and leak checks stay enabled.

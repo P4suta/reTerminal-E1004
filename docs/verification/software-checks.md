@@ -1,6 +1,8 @@
 # Software verification
 
 Recorded on November 6, 2026.
+This record describes the verified baseline at commit `b7ac579`.
+The current lifecycle contracts and required inventories appear in the [quality contracts](quality-contracts.md) and [verification reference](../../.agents/skills/reterminal-e1004/references/verification.md).
 The software checks passed for the offline app, shared rendering, previews, portable adapters, and compiled ESP32-S3 firmware configurations.
 Physical device acceptance remains unverified.
 The [quality contracts](quality-contracts.md) explain each discovered defect, the earlier enforcement gap, and the regression boundary.

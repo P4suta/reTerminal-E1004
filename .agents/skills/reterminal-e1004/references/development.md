@@ -54,6 +54,8 @@ Keep host clock and network reads outside screens.
 An active update has an operation ID and start time.
 Input changes the desired screen while one pending flag coalesces redraw requests.
 Only the active operation's completion can finish an update.
+Pending display work waits for a completed measurement, including a failed measurement result.
+Refresh requests during measurement share that operation.
 A timeout enters the failed state and refuses a late success notification.
 Storage and measurement work must finish before sleep.
 The default automatic refresh interval is 900 seconds.
@@ -124,11 +126,20 @@ Regular measurements and manual refresh update that sample.
 `diagnose` prints the expansion sample, exercises the status light and buzzer, and writes and reads `E1004.TXT` on a present card.
 The diagnostic file uses a reserved name and each diagnostic replaces its contents.
 Use `status`, `diagnose`, `refresh`, `sleep`, `interval SECONDS`, and `rtc YYYY-MM-DDTHH:MM:SS` through the console.
+`resume last` restores the selected screen after sleep or restart and is the default.
+`resume status` selects Status on every restart.
+The status response includes the current policy and saved screen.
 `wifi scan`, `wifi disconnect`, and `wifi connect SSID<TAB>PASSWORD` require the Wi-Fi feature.
 `ble on` and `ble off` require the `ble` feature.
 Supply credentials over the serial connection and keep them out of logs and replay fixtures.
 
-The settings format stores a format byte, generation, interval, orientation, `CRC-32` checksum, and commit marker in 24 bytes.
+Settings format 2 stores a format byte, generation, interval, orientation, resume policy, screen, `CRC-32` checksum, and commit marker in 24 bytes.
+Format 1 remains readable and supplies the default policy and Status screen.
+After quiescence, the runtime saves changed navigation once before sleep.
+Unchanged timer wakes perform no settings writes.
+An unsuccessful save reports `SettingsStorage` without changing the SD card status.
+After a failed navigation save, the runtime waits for a changed value before another automatic attempt.
+A restart can restore an earlier committed screen.
 The adapter invalidates and syncs the inactive slot before writing the payload.
 Boot reads both slots independently and retains a valid setting from either readable slot.
 A failed read returns no usable bytes, even when the storage implementation changed its destination buffer before reporting the failure.
