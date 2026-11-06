@@ -155,6 +155,9 @@ async fn exercise(browser: &Browser) -> BrowserResult {
     )
     .await?;
     assert_js(&page, "document.querySelector('#temperature').value === '23.45' && document.querySelector('#humidity').value === '56.78'").await?;
+    assert_js(&page, "!document.querySelector('#measurements').noValidate && document.querySelector('#clock').type === 'datetime-local' && document.querySelector('#clock').min === '2000-01-01T00:00:00' && document.querySelector('#clock').max === '2099-12-31T23:59:59' && document.querySelector('#clock').step === '1'").await?;
+    assert_js(&page, "['wait','immediate'].every(id => { const e=document.getElementById(id); return e.tagName==='INPUT' && e.type==='radio' && e.name==='completion' && e.closest('fieldset')?.querySelector('legend')?.textContent==='Display completion'; }) && document.querySelector('#immediate').checked && !document.querySelector('#wait').checked").await?;
+    assert_js(&page, "[['temperature','-45','130','0.01'],['humidity','0','100','0.01'],['battery','2000','5000','1']].every(([id,min,max,step]) => { const e=document.getElementById(id); return e.type==='number' && e.required && e.min===min && e.max===max && e.step===step && e.validity.valid; })").await?;
     assert_js(&page, "[...document.querySelector('#measurements').elements].every(e => !e.id || !(e.id in HTMLFormElement.prototype)) && typeof document.querySelector('#measurements').reset === 'function'").await?;
     assert_js(
         &page,
@@ -166,17 +169,42 @@ async fn exercise(browser: &Browser) -> BrowserResult {
     page.evaluate("document.querySelector('#events').closest('details').open=true")
         .await?;
     click(&page, "#apply").await?;
+    click(&page, "#record").await?;
+    page.evaluate("window.inputBoundaryFrame=document.querySelector('#display').toDataURL(); window.inputBoundaryRecording=document.querySelector('#events').value").await?;
+    for (field, invalid) in [
+        ("temperature", "-45.01"),
+        ("temperature", "130.01"),
+        ("humidity", "-0.01"),
+        ("humidity", "100.01"),
+        ("battery", "1999"),
+        ("battery", "5001"),
+        ("battery", "3900.5"),
+        ("clock", "1999-12-31T23:59"),
+        ("clock", "2100-01-01T00:00"),
+    ] {
+        page.evaluate(format!(
+            "window.boundaryControl=document.getElementById({}); window.boundaryValue=boundaryControl.value; boundaryControl.value={}; boundaryControl.dispatchEvent(new Event('input',{{bubbles:true}})); document.querySelector('#measurements').requestSubmit()",
+            serde_json::to_string(field)?, serde_json::to_string(invalid)?
+        )).await?;
+        assert_js(&page, "document.activeElement===window.boundaryControl && boundaryControl.getAttribute('aria-invalid')==='true' && document.querySelector('#form-error').textContent.length>0 && document.querySelector('#display').toDataURL()===window.inputBoundaryFrame").await?;
+        click(&page, "#record").await?;
+        assert_js(&page, "document.querySelector('#events').value===window.inputBoundaryRecording && boundaryControl.getAttribute('aria-invalid')==='true'").await?;
+        page.evaluate("boundaryControl.value=window.boundaryValue; boundaryControl.dispatchEvent(new Event('input',{bubbles:true}))").await?;
+        assert_js(&page, "!document.querySelector('[aria-invalid=true]') && document.querySelector('#form-error').textContent==='' && document.querySelector('#form-feedback').textContent.includes('not applied')").await?;
+    }
     click(&page, "#next").await?;
     click(&page, "#record").await?;
-    page.evaluate("window.beforeInvalidApply=document.querySelector('#events').value; window.beforeInvalidFrame=document.querySelector('#display').toDataURL(); document.querySelector('#clock').value='2027-11-05T19:30:00'; document.querySelector('#humidity').value='100.01'").await?;
+    page.evaluate("window.beforeInvalidApply=document.querySelector('#events').value; window.beforeInvalidFrame=document.querySelector('#display').toDataURL(); document.querySelector('#clock').value='2027-11-05T19:30:00'; document.querySelector('#humidity').value='100.01'; document.querySelector('#humidity').focus(); document.querySelector('#humidity').dispatchEvent(new Event('input',{bubbles:true}))").await?;
+    assert_js(&page, "document.activeElement.id==='humidity' && document.querySelector('#humidity').validity.rangeOverflow && document.querySelector('#humidity').getAttribute('aria-invalid')==='true' && document.querySelector('#humidity-error').textContent.includes('0 to 100') && document.querySelector('#form-feedback').textContent.includes('not applied') && document.querySelector('#display').toDataURL()===window.beforeInvalidFrame").await?;
     click(&page, "#apply").await?;
-    assert_js(&page, "document.activeElement.id === 'humidity' && document.activeElement.getAttribute('aria-invalid') === 'true' && document.activeElement.getAttribute('aria-describedby').includes('error') && document.querySelector('#error').textContent.includes('Relative humidity')").await?;
+    assert_js(&page, "document.activeElement.id === 'humidity' && document.activeElement.getAttribute('aria-invalid') === 'true' && document.activeElement.getAttribute('aria-describedby').includes('humidity-error') && document.querySelector('#form-error').textContent.includes('Relative humidity')").await?;
     assert_js(
         &page,
         "document.querySelector('#display').toDataURL() === window.beforeInvalidFrame",
     )
     .await?;
     click(&page, "#record").await?;
+    assert_js(&page, "document.querySelector('#humidity').getAttribute('aria-invalid')==='true' && document.querySelector('#humidity-error').textContent.includes('0 to 100') && document.querySelector('#form-error').textContent.includes('Relative humidity')").await?;
     assert_js(
         &page,
         "document.querySelector('#events').value === window.beforeInvalidApply",
@@ -189,7 +217,7 @@ async fn exercise(browser: &Browser) -> BrowserResult {
         .await?
         .press_key("Enter")
         .await?;
-    assert_js(&page, "document.querySelector('#error').textContent === '' && !document.querySelector('[aria-invalid=true]')").await?;
+    assert_js(&page, "document.querySelector('#error').textContent === '' && document.querySelector('#form-error').textContent === '' && document.querySelector('#form-feedback').textContent==='Measurements applied.' && !document.querySelector('[aria-invalid=true]')").await?;
     assert_js(
         &page,
         "document.querySelector('#state').textContent.startsWith('Diagnostics')",
@@ -215,12 +243,28 @@ async fn exercise(browser: &Browser) -> BrowserResult {
         "getComputedStyle(document.activeElement).outlineStyle !== 'none'",
     )
     .await?;
+    page.find_element("#immediate")
+        .await?
+        .focus()
+        .await?
+        .press_key("ArrowRight")
+        .await?;
+    assert_js(&page, "document.querySelector('#wait').checked && !document.querySelector('#immediate').checked && document.querySelector('#completion-help').textContent.includes('Refresh')").await?;
+    page.find_element("#wait")
+        .await?
+        .press_key("ArrowLeft")
+        .await?;
+    assert_js(
+        &page,
+        "document.querySelector('#immediate').checked && !document.querySelector('#wait').checked",
+    )
+    .await?;
     click(&page, "#wait").await?;
     page.evaluate("window.presentedBeforeHold=document.querySelector('#display').toDataURL()")
         .await?;
     click(&page, "#next").await?;
     click(&page, "#wait").await?;
-    assert_js(&page, "document.querySelector('#display').toDataURL() === window.presentedBeforeHold && document.querySelector('#wait').getAttribute('aria-pressed') === 'true' && !document.querySelector('#complete').disabled").await?;
+    assert_js(&page, "document.querySelector('#display').toDataURL() === window.presentedBeforeHold && document.querySelector('#wait').checked && !document.querySelector('#immediate').checked && !document.querySelector('#complete').disabled && document.querySelector('#completion-help').textContent.includes('An update is waiting')").await?;
     assert_js(
         &page,
         "document.querySelector('#state').textContent.includes('Updating')",
@@ -244,7 +288,7 @@ async fn exercise(browser: &Browser) -> BrowserResult {
     click(&page, "#record").await?;
     assert_js(
         &page,
-        "document.querySelector('#events').value.includes('measurements 2026-11-05T19:30:00 23.45 56.78')",
+        "document.querySelector('#events').value.includes('measurements 2026-11-05T19:30 23.45 56.78')",
     )
     .await?;
     click(&page, "#replay").await?;
@@ -256,6 +300,7 @@ async fn exercise(browser: &Browser) -> BrowserResult {
     assert_js(&page, "document.querySelector('#state').textContent.startsWith('Device Status') && document.querySelector('#state').textContent.includes('23.45 C') && document.querySelector('#rotation').value === '0' && document.querySelector('#error').textContent === ''").await?;
     assert_js(&page, "[...document.querySelectorAll('*')].every(e => { const s=getComputedStyle(e); return ['rgb(0, 0, 0)','rgb(255, 255, 255)'].includes(s.color) && ['rgb(0, 0, 0)','rgb(255, 255, 255)','rgba(0, 0, 0, 0)'].includes(s.backgroundColor) && s.opacity==='1' && s.boxShadow==='none' && s.textShadow==='none' && s.filter==='none' && s.backgroundImage==='none' && s.mixBlendMode==='normal'; })").await?;
     assert_js(&page, "performance.getEntriesByType('resource').every(e => new URL(e.name).origin === location.origin)").await?;
+    assert_js(&page, "[...document.querySelectorAll('button,input:not([type=radio]),select,summary,.choices label')].filter(e=>e.getClientRects().length).every(e=>{const r=e.getBoundingClientRect();return r.width>=44 && r.height>=44})").await?;
     let fixture = fs::read_to_string("verification/fixtures/status.events")?;
     let mut native = device_preview::Preview::default();
     native.replay(&fixture)?;

@@ -55,11 +55,17 @@ pub(crate) struct Measurements {
     pub ble: RadioStatus,
 }
 impl MeasurementInputs<'_> {
+    pub fn check(self) -> Result<(), InputError> {
+        self.validate(VALIDATION_TIME_MS).map(|_| ())
+    }
+
     pub(crate) fn validate(self, now: u64) -> Result<Measurements, InputError> {
-        let clock = DateTime::parse(self.clock).ok_or(InputError::new(
-            "clock",
-            "RTC time: enter a valid date from 2000 to 2099 as YYYY-MM-DDTHH:MM:SS.",
-        ))?;
+        let clock = normalize_clock_bytes(self.clock.as_bytes())
+            .and_then(|bytes| std::str::from_utf8(&bytes).ok().and_then(DateTime::parse))
+            .ok_or(InputError::new(
+                "clock",
+                "Device time: choose a valid date from 2000 to 2099.",
+            ))?;
         let temperature = parse_hundredths(self.temperature)
             .and_then(|n| i16::try_from(n).ok())
             .and_then(Temperature::new)
@@ -152,6 +158,23 @@ impl MeasurementInputs<'_> {
         )
     }
 }
+const VALIDATION_TIME_MS: u64 = 0;
+const CLOCK_MINUTE_BYTES: usize = 16;
+const CLOCK_SECOND_BYTES: usize = 19;
+
+pub(crate) fn normalize_clock_bytes(input: &[u8]) -> Option<[u8; CLOCK_SECOND_BYTES]> {
+    let mut bytes = [b'0'; CLOCK_SECOND_BYTES];
+    match input.len() {
+        CLOCK_MINUTE_BYTES => {
+            bytes[..CLOCK_MINUTE_BYTES].copy_from_slice(input);
+            bytes[CLOCK_MINUTE_BYTES] = b':';
+        }
+        CLOCK_SECOND_BYTES => bytes.copy_from_slice(input),
+        _ => return None,
+    }
+    Some(bytes)
+}
+
 fn radio(value: &str) -> Option<RadioStatus> {
     match value {
         "off" => Some(RadioStatus::Off),

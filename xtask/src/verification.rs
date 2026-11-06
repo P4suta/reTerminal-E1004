@@ -22,6 +22,7 @@ const CONTAINER_IMAGE_VARIABLE: &str = "E1004_VERIFICATION_CONTAINER_IMAGE";
 const SNAPSHOT_DIRECTORY: &str = "/tmp/e1004-source";
 const PROGRESS_CHUNK_BYTES: usize = 4096;
 const PREVIEW_HARNESSES: &[&str] = &[
+    "proofs::native_clock_normalization_preserves_bytes_and_supplies_only_zero_seconds",
     "proofs::recording_budget_matches_wide_arithmetic_at_every_admitted_boundary",
     "proofs::a_cancelled_preview_update_cannot_be_presented_by_mode_switch_or_late_success",
 ];

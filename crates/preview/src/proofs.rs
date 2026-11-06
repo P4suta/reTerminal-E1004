@@ -1,6 +1,33 @@
 use super::*;
 
 #[kani::proof]
+#[kani::unwind(21)]
+fn native_clock_normalization_preserves_bytes_and_supplies_only_zero_seconds() {
+    const INPUT_BYTES: usize = 20;
+    const MINUTE_BYTES: usize = 16;
+    const SECOND_BYTES: usize = 19;
+    let input: [u8; INPUT_BYTES] = kani::any();
+    let length: usize = kani::any();
+    kani::assume(length <= INPUT_BYTES);
+    let result = measurements::normalize_clock_bytes(&input[..length]);
+    assert_eq!(
+        result.is_some(),
+        length == MINUTE_BYTES || length == SECOND_BYTES
+    );
+    if let Some(bytes) = result {
+        if length == MINUTE_BYTES {
+            assert_eq!(&bytes[..MINUTE_BYTES], &input[..MINUTE_BYTES]);
+            assert_eq!(&bytes[MINUTE_BYTES..], b":00");
+        } else {
+            assert_eq!(bytes, input[..SECOND_BYTES]);
+        }
+    }
+    kani::cover!(length == MINUTE_BYTES);
+    kani::cover!(length == SECOND_BYTES);
+    kani::cover!(result.is_none());
+}
+
+#[kani::proof]
 #[kani::unwind(2)]
 fn recording_budget_matches_wide_arithmetic_at_every_admitted_boundary() {
     let bytes: usize = kani::any();

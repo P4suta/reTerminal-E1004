@@ -2,9 +2,52 @@ use device_core::{app::RefreshState, telemetry::*};
 use device_preview::{MeasurementInputs, Preview};
 
 #[test]
+fn native_date_controls_accept_minute_precision_without_losing_seconds() {
+    for clock in [
+        "2000-01-01T00:00",
+        "2000-02-29T23:59",
+        "2099-12-31T23:59",
+        "2026-11-05T19:30:47",
+    ] {
+        let mut preview = Preview::default();
+        preview
+            .apply_measurements(&MeasurementInputs {
+                clock,
+                ..MeasurementInputs::default()
+            })
+            .unwrap();
+        let Sample::Fresh { value, .. } = preview.app().telemetry.clock else {
+            panic!("valid native clock did not become a fresh sample");
+        };
+        assert_eq!(value.second, if clock.ends_with(":47") { 47 } else { 0 });
+        let mut replay = Preview::default();
+        replay.replay(&preview.recording()).unwrap();
+        assert_eq!(replay.app(), preview.app());
+    }
+    for clock in [
+        "1999-12-31T23:59",
+        "2100-01-01T00:00",
+        "2001-02-29T12:30",
+        "2026-11-05T24:00",
+        "2026-11-05T19:30Z",
+    ] {
+        let mut preview = Preview::default();
+        let before = (*preview.app(), preview.recording());
+        assert!(preview
+            .apply_measurements(&MeasurementInputs {
+                clock,
+                ..MeasurementInputs::default()
+            })
+            .is_err());
+        assert_eq!((*preview.app(), preview.recording()), before);
+    }
+}
+
+#[test]
 fn a_form_submission_validates_all_fields_before_one_display_request() {
     let mut preview = Preview::default();
     let inputs = MeasurementInputs::default();
+    assert_eq!(inputs.check(), Ok(()));
     preview.apply_measurements(&inputs).unwrap();
     assert_eq!(preview.app().sequence, 1);
     assert_eq!(preview.app().refresh, RefreshState::Idle);
@@ -71,6 +114,7 @@ fn a_form_submission_validates_all_fields_before_one_display_request() {
         ),
     ] {
         let error = preview.apply_measurements(&invalid).unwrap_err();
+        assert_eq!(invalid.check(), Err(error));
         assert_eq!(error.field(), field);
         assert_eq!(error.message(), error.to_string());
         assert!(!error.to_string().is_empty());

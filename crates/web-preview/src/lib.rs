@@ -69,25 +69,23 @@ fn update(document: &web_sys::Document, preview: &WebPreview) -> Result<(), JsVa
     preview.draw(element(document, "display")?.dyn_into()?)?;
     element(document, "state")?.set_text_content(Some(&preview.text()));
     element(document, "update-status")?.set_text_content(Some(preview.inner.display_status()));
-    element(document, "wait")?.set_attribute(
-        "aria-pressed",
-        if preview.inner.immediate() {
-            "false"
-        } else {
-            "true"
-        },
-    )?;
-    element(document, "immediate")?.set_attribute(
-        "aria-pressed",
-        if preview.inner.immediate() {
-            "true"
-        } else {
-            "false"
-        },
-    )?;
+    element(document, "wait")?
+        .dyn_into::<web_sys::HtmlInputElement>()?
+        .set_checked(!preview.inner.immediate());
+    element(document, "immediate")?
+        .dyn_into::<web_sys::HtmlInputElement>()?
+        .set_checked(preview.inner.immediate());
+    let updating = matches!(preview.inner.app().refresh, RefreshState::Updating { .. });
+    element(document, "completion-help")?.set_text_content(Some(if updating {
+        "An update is waiting. Choose Complete update or Simulate panel timeout."
+    } else if preview.inner.immediate() {
+        "Choose Manual completion, then Refresh, to pause an update."
+    } else {
+        "No update is waiting. Choose Refresh to start one."
+    }));
     for id in ["complete", "timeout"] {
         let control = element(document, id)?;
-        if matches!(preview.inner.app().refresh, RefreshState::Updating { .. }) {
+        if updating {
             control.remove_attribute("disabled")?;
         } else {
             control.set_attribute("disabled", "")?;
@@ -120,14 +118,7 @@ fn clear_validation(document: &web_sys::Document) -> Result<(), JsValue> {
     for id in MEASUREMENT_FIELDS {
         let control = element(document, id)?;
         control.remove_attribute("aria-invalid")?;
-        let description = control
-            .get_attribute("aria-describedby")
-            .unwrap_or_default()
-            .split_whitespace()
-            .filter(|id| *id != "error")
-            .collect::<Vec<_>>()
-            .join(" ");
-        control.set_attribute("aria-describedby", &description)?;
+        element(document, &format!("{id}-error"))?.set_text_content(None);
     }
     Ok(())
 }
@@ -144,13 +135,14 @@ pub fn mount() -> Result<(), JsValue> {
         .apply_measurements(&device_preview::MeasurementInputs::default())
         .map_err(|e| JsValue::from_str(e.message()))?;
     update(&document, &preview.borrow())?;
+    element(&document, "form-feedback")?.set_text_content(Some("Example measurements applied."));
     for (id, event_name, action) in [
         ("previous", "click", "previous"),
         ("refresh", "click", "refresh"),
         ("next", "click", "next"),
-        ("wait", "click", "wait"),
+        ("wait", "change", "wait"),
         ("complete", "click", "complete"),
-        ("immediate", "click", "immediate"),
+        ("immediate", "change", "immediate"),
         ("timeout", "click", "timeout"),
         ("sensor-fault", "click", "sensor-fault"),
         ("sensor-missing", "click", "sensor-missing"),
@@ -161,40 +153,59 @@ pub fn mount() -> Result<(), JsValue> {
         ("record", "click", "record"),
         ("replay", "click", "replay"),
         ("rotation", "change", "rotation"),
-    ] {
+    ]
+    .into_iter()
+    .chain(MEASUREMENT_FIELDS.map(|id| (id, "input", "validate")))
+    .chain(MEASUREMENT_FIELDS.map(|id| (id, "invalid", "invalid")))
+    {
         let document = document.clone();
         let preview = Rc::clone(&preview);
         let button = element(&document, id)?;
         let error = element(&document, "error")?;
+        let form_error = element(&document, "form-error")?;
         let handler = Closure::wrap(Box::new(move |event: web_sys::Event| {
             event.prevent_default();
             let mut invalid_field = None;
             let result = (|| -> Result<(), JsValue> {
                 let mut preview = preview.borrow_mut();
-                clear_validation(&document)?;
                 match action {
-                    "apply" => {
+                    "apply" | "validate" | "invalid" => {
+                        clear_validation(&document)?;
                         let fields = MEASUREMENT_FIELDS.map(|field| value(&document, field));
                         let [clock, temperature, humidity, battery, charging, sd, wifi, ble] =
                             fields;
-                        preview
-                            .inner
-                            .apply_measurements(&device_preview::MeasurementInputs {
-                                clock: &clock?,
-                                temperature: &temperature?,
-                                humidity: &humidity?,
-                                battery: &battery?,
-                                charging: &charging?,
-                                sd: &sd?,
-                                wifi: &wifi?,
-                                ble: &ble?,
-                            })
-                            .map_err(|e| {
-                                invalid_field = Some(e.field());
-                                JsValue::from_str(e.message())
-                            })?;
+                        let inputs = device_preview::MeasurementInputs {
+                            clock: &clock?,
+                            temperature: &temperature?,
+                            humidity: &humidity?,
+                            battery: &battery?,
+                            charging: &charging?,
+                            sd: &sd?,
+                            wifi: &wifi?,
+                            ble: &ble?,
+                        };
+                        let result = if action == "apply" {
+                            preview.inner.apply_measurements(&inputs)
+                        } else {
+                            inputs.check()
+                        };
+                        result.map_err(|error| {
+                            invalid_field = Some(error);
+                            JsValue::from_str(error.message())
+                        })?;
+                        element(&document, "form-feedback")?.set_text_content(Some(
+                            if action == "apply" {
+                                "Measurements applied."
+                            } else {
+                                "Changes not applied. Choose Apply measurements."
+                            },
+                        ));
                     }
                     "reset" => {
+                        clear_validation(&document)?;
+                        element(&document, "form-error")?.set_text_content(None);
+                        element(&document, "form-feedback")?
+                            .set_text_content(Some("Example measurements applied."));
                         element(&document, "measurements")?
                             .dyn_into::<web_sys::HtmlFormElement>()?
                             .reset();
@@ -232,23 +243,27 @@ pub fn mount() -> Result<(), JsValue> {
                     }
                     command => preview.command(command)?,
                 }
-                update(&document, &preview)?;
+                if !matches!(action, "validate" | "invalid") {
+                    update(&document, &preview)?;
+                }
                 Ok(())
             })();
-            if let Some(field) = invalid_field {
+            if let Some(failure) = invalid_field {
                 let decorated = (|| -> Result<(), JsValue> {
+                    let field = failure.field();
                     let control = element(&document, field)?;
                     control.set_attribute("aria-invalid", "true")?;
-                    control.set_attribute(
-                        "aria-describedby",
-                        &format!(
-                            "{} error",
-                            control
-                                .get_attribute("aria-describedby")
-                                .unwrap_or_default()
-                        ),
-                    )?;
-                    control.dyn_into::<web_sys::HtmlElement>()?.focus()
+                    element(&document, &format!("{field}-error"))?
+                        .set_text_content(Some(failure.message()));
+                    element(&document, "form-feedback")?
+                        .set_text_content(Some("Changes not applied. Correct the field error."));
+                    if matches!(action, "apply" | "invalid") {
+                        if let Some(details) = control.closest("details")? {
+                            details.set_attribute("open", "")?;
+                        }
+                        control.dyn_into::<web_sys::HtmlElement>()?.focus()?;
+                    }
+                    Ok(())
                 })();
                 if let Err(failure) = decorated {
                     error.set_text_content(Some(&format!(
@@ -257,9 +272,12 @@ pub fn mount() -> Result<(), JsValue> {
                     return;
                 }
             }
-            error.set_text_content(Some(
-                &result.err().and_then(|e| e.as_string()).unwrap_or_default(),
-            ));
+            let message = result.err().and_then(|e| e.as_string()).unwrap_or_default();
+            if matches!(action, "apply" | "validate" | "invalid") {
+                form_error.set_text_content(Some(if action == "validate" { "" } else { &message }));
+            } else {
+                error.set_text_content(Some(&message));
+            }
         }) as Box<dyn FnMut(web_sys::Event)>);
         button.add_event_listener_with_callback(event_name, handler.as_ref().unchecked_ref())?;
         HANDLERS.with(|handlers| handlers.borrow_mut().push(handler));

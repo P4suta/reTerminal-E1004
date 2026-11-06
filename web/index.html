@@ -27,34 +27,44 @@
         <section aria-labelledby="inputs-heading">
           <h2 id="inputs-heading">Measurements</h2>
           <p>Change values and apply them together.
-          The preview runs locally without an account.</p>
+          All measurement fields are required.</p>
           <p id="error" role="alert" aria-atomic="true"></p>
-          <form id="measurements" novalidate>
-          <label for="clock">RTC time</label>
-          <input id="clock" type="text" value="2026-11-05T19:30:00" maxlength="19" required aria-describedby="clock-help">
-          <p class="hint" id="clock-help">YYYY-MM-DDTHH:MM:SS, from 2000 to 2099, without a time zone.</p>
+          <p id="form-feedback" role="status" aria-atomic="true"></p>
+          <p id="form-error" role="alert" aria-atomic="true"></p>
+          <form id="measurements">
+          <label for="clock">Device time</label>
+          <input id="clock" type="datetime-local" min="2000-01-01T00:00:00" max="2099-12-31T23:59:59" step="1" value="2026-11-05T19:30:00" required aria-describedby="clock-help clock-error">
+          <p class="hint" id="clock-help">Choose a date from 2000 to 2099 in device local time, without a time zone.</p>
+          <p class="field-error" id="clock-error"></p>
           <div class="field-pair">
           <div><label for="temperature">Temperature (°C)</label>
-          <input id="temperature" type="number" min="-45" max="130" step="0.01" value="23.45" required aria-describedby="temperature-help">
-          <p class="hint" id="temperature-help">-45 to 130 °C.</p></div>
+          <input id="temperature" type="number" min="-45" max="130" step="0.01" value="23.45" required aria-describedby="temperature-help temperature-error">
+          <p class="hint" id="temperature-help">-45 to 130 °C.</p>
+          <p class="field-error" id="temperature-error"></p></div>
           <div><label for="humidity">Relative humidity (%)</label>
-          <input id="humidity" type="number" min="0" max="100" step="0.01" value="56.78" required aria-describedby="humidity-help">
-          <p class="hint" id="humidity-help">0 to 100 %.</p></div>
+          <input id="humidity" type="number" min="0" max="100" step="0.01" value="56.78" required aria-describedby="humidity-help humidity-error">
+          <p class="hint" id="humidity-help">0 to 100 %.</p>
+          <p class="field-error" id="humidity-error"></p></div>
           </div>
           <label for="battery">Battery voltage (mV)</label>
-          <input id="battery" type="number" min="2000" max="5000" step="1" value="3900" required aria-describedby="battery-help">
+          <input id="battery" type="number" min="2000" max="5000" step="1" value="3900" required aria-describedby="battery-help battery-error">
           <p class="hint" id="battery-help">2000 to 5000 mV.
           Battery percentage is an estimate.</p>
+          <p class="field-error" id="battery-error"></p>
           <label for="charging">Charging</label>
-          <select id="charging"><option value="unknown">Unknown</option><option value="charging">Charging</option><option value="off">Not charging</option></select>
+          <select id="charging" aria-describedby="charging-error"><option value="unknown">Unknown</option><option value="charging">Charging</option><option value="off">Not charging</option></select>
+          <p class="field-error" id="charging-error"></p>
           <details>
           <summary>Storage and radio states</summary>
           <label for="sd">SD card</label>
-          <select id="sd"><option value="absent">Absent</option><option value="ready">Ready</option><option value="fault">Fault</option></select>
+          <select id="sd" aria-describedby="sd-error"><option value="absent">Absent</option><option value="ready">Ready</option><option value="fault">Fault</option></select>
+          <p class="field-error" id="sd-error"></p>
           <label for="wifi">Wi-Fi</label>
-          <select id="wifi"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select>
+          <select id="wifi" aria-describedby="wifi-error"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select>
+          <p class="field-error" id="wifi-error"></p>
           <label for="ble">Bluetooth Low Energy</label>
-          <select id="ble"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select>
+          <select id="ble" aria-describedby="ble-error"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select>
+          <p class="field-error" id="ble-error"></p>
           </details>
           <div class="buttons"><button type="submit" id="apply">Apply measurements</button><button type="button" id="reset-example">Reset example</button></div>
           </form>
@@ -63,18 +73,30 @@
           <summary>Update simulation and faults</summary>
         <section aria-labelledby="update-heading">
           <h2 id="update-heading">Update simulation</h2>
-          <p>Hold completion to inspect queued screens and failures.
-          Refresh retries a failed update.</p>
+          <fieldset aria-describedby="completion-mode-help">
+            <legend>Display completion</legend>
+            <div class="choices">
+              <label for="immediate"><input type="radio" id="immediate" name="completion" value="immediate" checked>Automatic completion</label>
+              <label for="wait"><input type="radio" id="wait" name="completion" value="wait">Manual completion</label>
+            </div>
+            <p class="hint" id="completion-mode-help">Automatic completion shows updates immediately.
+            Manual completion waits for Complete update.</p>
+          </fieldset>
+          <p id="completion-help">Choose Manual completion, then Refresh, to pause an update.</p>
           <div class="buttons">
-            <button type="button" id="wait" aria-pressed="false">Hold completion</button>
-            <button type="button" id="complete">Complete update</button>
-            <button type="button" id="immediate" aria-pressed="true">Immediate updates</button>
-            <button type="button" id="timeout">Panel timeout</button>
+            <button type="button" id="complete" aria-describedby="completion-help">Complete update</button>
+            <button type="button" id="timeout" aria-describedby="completion-help">Simulate panel timeout</button>
+          </div>
+          <fieldset>
+            <legend>Simulate a fault or advance time</legend>
+            <p>Refresh retries a failed update.</p>
+            <div class="buttons">
             <button type="button" id="sensor-fault">Sensor fault</button>
             <button type="button" id="sensor-missing">Sensor missing</button>
             <button type="button" id="rtc-invalid">Invalid RTC</button>
             <button type="button" id="advance">Advance 15 minutes</button>
-          </div>
+            </div>
+          </fieldset>
         </section>
         </details>
         <details class="advanced">
