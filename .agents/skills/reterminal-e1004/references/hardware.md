@@ -87,9 +87,16 @@ Missing host tests for startup, cancellation, wake configuration, or power seque
 Treat those gaps as software work rather than physical measurements.
 Model those interfaces and exercise the production control paths before the device arrives.
 
-Record the delivered board revision, firmware digest, supply, instrument, and ambient temperature before acceptance measurements.
-Capture all six colors, controller seams, every rotation, complete refresh duration, timeout recovery, and a power cycle after deep sleep.
-Check each button while awake and as a wake source, timer wake, clock backup loss, card removal during writes, charge status, serial output, and optional radio operation.
-Measure sleep current with panel, SD power, divider, status light, and buzzer inactive.
-Record current and elapsed time with units rather than estimating battery life from compiler or host results.
-The project has no physical acceptance measurements.
+After device connection, limit agent work to operations and observations available through the connected interfaces.
+The [development reference](development.md#console-and-persistence) identifies the implemented serial commands.
+Wi-Fi connectivity alone doesn't provide remote command execution or a diagnostic endpoint.
+Discover the reachable interfaces before scheduling device checks.
+For each check, identify an implemented command, its observable result, and the acceptance criterion.
+Record actual commands, outputs, firmware identity, and verdicts in the [device record](../../../../docs/acceptance/device-measurements.toml).
+
+Serial status, peripheral readouts, and command results can establish what the firmware reports.
+They don't establish the panel's visible appearance or measured current consumption.
+The [saved peripheral cookbook](upstream/wiki/arduino-peripherals.md) documents battery voltage sampling and serial logging.
+The repository implements no camera or current-measurement acquisition path.
+Don't list unavailable visual, electrical, or manual experiments as outstanding agent work.
+The device record contains no measurements.

@@ -353,6 +353,9 @@ The [peripheral-port decision](../adr/execute-firmware-tasks-through-peripheral-
 The target compiler and source binding gate check concrete adapters while host tests execute production control paths under those contracts.
 Host execution doesn't establish silicon behavior or a complete model of every possible scheduler history.
 
-Physical acceptance records actual current, color, timing, calibration, and the delivered unit's conformance to the published hardware.
-It doesn't replace verification of pin selection, register values, control order, wake configuration, cancellation, or recovery logic.
-Keep missing software evidence visible independently of missing measurements.
+The former acceptance template listed physical properties without an acquisition path.
+The documentation gate checked reference presence and source metadata without checking whether an experiment was executable.
+The [hardware reference](../../.agents/skills/reterminal-e1004/references/hardware.md#physical-acceptance) now limits agent work to reachable commands, observable results, and explicit acceptance criteria.
+The device record no longer contains placeholder experiments.
+Don't classify unavailable visual, electrical, or manual measurements as unfinished agent work.
+Keep verification of pin selection, register values, control order, wake configuration, cancellation, and recovery independent of physical observations.

@@ -115,7 +115,7 @@ The checked alternative executes production control paths through modeled ports 
 
 The [workflow comparison](../../../../docs/verification/workflow-comparison.md) compares documented factory procedures with equivalent offline Rust tasks.
 Keep physical button feel, viewing quality, real refresh latency, and measured user preference separate from that source-based comparison.
-The hardware acceptance record tracks measured properties rather than postponing implementation or software verification.
+The device record contains actual observations rather than a placeholder list of experiments without an available acquisition path.
 
 ## Result identity
 
@@ -130,5 +130,6 @@ Starting a retry invalidates that task's earlier receipts without changing anoth
 Regenerate a result after changing a covered production function or its assumptions.
 Keep unrun, failed, inconclusive, and physically unverified checks distinct.
 Run `mise x -- just check-assurance` to reject missing, stale, unsuccessful, or incomplete local verification receipts.
-The hardware reference defines the device acceptance measurements that remain after software verification.
+The hardware reference limits device checks to commands and observations the agent can access through the connected interfaces.
+Unavailable visual, electrical, and manual experiments aren't outstanding software work.
 The [software verification record](../../../../docs/verification/software-checks.md) reports the implemented scope and observed results.
