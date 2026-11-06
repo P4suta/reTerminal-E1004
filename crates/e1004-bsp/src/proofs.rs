@@ -2,6 +2,40 @@ use crate::{input::Debouncer, sensors::*};
 use device_core::telemetry::{DateTime, Fault};
 
 #[kani::proof]
+#[kani::unwind(8)]
+fn resume_policy_decoding_accepts_only_exact_ascii_values() {
+    use crate::console::resume_policy;
+    use device_core::settings::ResumePolicy;
+    let bytes: [u8; 6] = kani::any();
+    for byte in bytes {
+        kani::assume(byte.is_ascii());
+    }
+    let length: usize = kani::any();
+    kani::assume(length <= bytes.len());
+    let input = core::str::from_utf8(&bytes[..length]).unwrap();
+    let last =
+        length == 4 && bytes[0] == b'l' && bytes[1] == b'a' && bytes[2] == b's' && bytes[3] == b't';
+    let status = length == 6
+        && bytes[0] == b's'
+        && bytes[1] == b't'
+        && bytes[2] == b'a'
+        && bytes[3] == b't'
+        && bytes[4] == b'u'
+        && bytes[5] == b's';
+    let expected = if last {
+        Some(ResumePolicy::Last)
+    } else if status {
+        Some(ResumePolicy::Status)
+    } else {
+        None
+    };
+    assert_eq!(resume_policy(input), expected);
+    kani::cover!(last);
+    kani::cover!(status);
+    kani::cover!(expected.is_none());
+}
+
+#[kani::proof]
 #[kani::unwind(2)]
 fn flash_addresses_are_bounded_and_sectors_are_disjoint() {
     let slot: usize = kani::any();
@@ -26,7 +60,11 @@ mod effects;
 #[kani::proof]
 #[kani::unwind(2)]
 fn console_step_preserves_buffer_and_discard_invariants() {
-    let mut input = crate::console::LineInput::proof_state(kani::any(), kani::any(), kani::any());
+    let length = kani::any();
+    let discarding = kani::any();
+    let complete = kani::any();
+    let mut input = crate::console::LineInput::proof_state(length, discarding, complete);
+    assert_eq!(input.proof_components(), (length, discarding, complete));
     kani::assume(input.invariant());
     input.push(kani::any());
     assert!(input.invariant());
@@ -36,6 +74,23 @@ fn console_step_preserves_buffer_and_discard_invariants() {
     assert_eq!(pending, Some(request));
     effects::dispatch(&mut pending, |_| None);
     assert_eq!(pending, None);
+}
+
+#[kani::proof]
+#[kani::unwind(2)]
+fn wifi_credential_lengths_match_the_byte_limits() {
+    let ssid: usize = kani::any();
+    let password: usize = kani::any();
+    const SSID_LIMIT: usize = 32;
+    const PASSWORD_LIMIT: usize = 63;
+    assert_eq!(
+        crate::console::wifi_credential_lengths_valid(ssid, password),
+        (1..=SSID_LIMIT).contains(&ssid) && password <= PASSWORD_LIMIT
+    );
+    kani::cover!(ssid == SSID_LIMIT && password == PASSWORD_LIMIT);
+    kani::cover!(
+        ssid > 0 && password == 0 && crate::console::wifi_credential_lengths_valid(ssid, password)
+    );
 }
 
 #[kani::proof]

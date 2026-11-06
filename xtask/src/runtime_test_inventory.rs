@@ -1,4 +1,10 @@
 pub const CASES: &[&str] = &[
+    "switching_resume_policy_saves_the_active_screen_without_an_extra_sleep_write",
+    "failed_screen_retention_is_reported_once_and_preserves_a_committed_screen",
+    "rapid_measurement_and_navigation_requests_coalesce_before_sleep",
+    "boot_waits_for_measurements_and_draws_once",
+    "settings_fault_matrix_preserves_sd_status_and_reports_the_actual_operation",
+    "screen_policy_survives_real_sleep_and_restart_without_rewriting_unchanged_settings",
     "virtual_time_advances_while_a_ready_task_keeps_yielding",
     "ble_can_restart_after_releasing_its_controller",
     "ble_uses_both_fresh_and_stale_validated_battery_values_without_a_new_measurement",

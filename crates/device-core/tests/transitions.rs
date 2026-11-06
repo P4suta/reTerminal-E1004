@@ -1,6 +1,110 @@
 use device_core::{app::*, telemetry::*};
 
 #[test]
+fn settings_faults_redraw_only_diagnostics_and_preserve_work_in_progress() {
+    for screen in [ScreenId::Status, ScreenId::Diagnostics, ScreenId::Drawing] {
+        for measurement_busy in [false, true] {
+            for refresh in [
+                RefreshState::Idle,
+                RefreshState::Updating {
+                    id: 9,
+                    started_ms: 0,
+                },
+                RefreshState::Failed(Fault::Bus),
+            ] {
+                let app = App {
+                    screen,
+                    measurement_busy,
+                    refresh,
+                    sequence: 9,
+                    ..App::default()
+                };
+                let failed = app.transition(AppEvent::SettingsFailed);
+                assert_eq!(failed.state.diagnostics.storage, app.diagnostics.storage);
+                assert_eq!(
+                    failed.state.diagnostics.last_error,
+                    Some(Fault::SettingsStorage)
+                );
+                assert!(failed
+                    .actions
+                    .contains(&Action::Log(Fault::SettingsStorage)));
+                let displays = screen == ScreenId::Diagnostics
+                    && !measurement_busy
+                    && refresh == RefreshState::Idle;
+                assert_eq!(
+                    failed.actions.contains(&Action::Display { id: 10 }),
+                    displays
+                );
+                assert_eq!(
+                    failed.state.pending,
+                    screen == ScreenId::Diagnostics && !displays
+                );
+                if !displays {
+                    assert_eq!(failed.state.refresh, refresh);
+                }
+                assert_eq!(failed.state.measurement_busy, measurement_busy);
+            }
+        }
+    }
+}
+
+#[test]
+fn diagnostics_redraws_when_fault_identity_changes_without_a_card_status_change() {
+    let app = App {
+        screen: ScreenId::Diagnostics,
+        diagnostics: Diagnostics {
+            storage: StorageStatus::Fault,
+            last_error: Some(Fault::SettingsStorage),
+            ..Diagnostics::default()
+        },
+        ..App::default()
+    };
+    let changed = app.transition(AppEvent::StorageChanged(StorageStatus::Fault));
+    assert_eq!(changed.state.diagnostics.last_error, Some(Fault::Storage));
+    assert!(changed.actions.contains(&Action::Display { id: 1 }));
+}
+
+#[test]
+fn sd_failure_reports_its_component_and_success_does_not_erase_fault_history() {
+    let failed = App::default().transition(AppEvent::StorageChanged(StorageStatus::Fault));
+    assert_eq!(failed.state.diagnostics.last_error, Some(Fault::Storage));
+    assert!(failed.actions.contains(&Action::Log(Fault::Storage)));
+    let flash = failed.state.transition(AppEvent::SettingsFailed);
+    let recovered = flash
+        .state
+        .transition(AppEvent::StorageChanged(StorageStatus::Ready));
+    assert_eq!(recovered.state.diagnostics.storage, StorageStatus::Ready);
+    assert_eq!(
+        recovered.state.diagnostics.last_error,
+        Some(Fault::SettingsStorage)
+    );
+}
+
+#[test]
+fn measurement_requests_wait_for_one_completed_sample_before_display() {
+    for trigger in [
+        AppEvent::Wake(WakeReason::PowerOn),
+        AppEvent::Button(Button::Refresh),
+        AppEvent::Tick(REFRESH_INTERVAL_MS),
+    ] {
+        let started = App::default().transition(trigger);
+        assert!(started.actions.contains(&Action::Measure));
+        assert!(started.state.measurement_busy);
+        assert!(!started
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::Display { .. })));
+        let navigated = started.state.transition(AppEvent::Button(Button::Next));
+        assert_eq!(navigated.state.refresh, RefreshState::Idle);
+        let completed = navigated
+            .state
+            .transition(AppEvent::Telemetry(TelemetrySnapshot::default()));
+        assert!(completed.actions.contains(&Action::Display { id: 1 }));
+        assert_eq!(completed.state.screen, ScreenId::Diagnostics);
+    }
+}
+
+#[test]
 fn panel_failures_revoke_sleep_and_ignore_failures_from_an_old_generation() {
     for sequence in [0, u32::MAX] {
         for refresh in [
@@ -61,6 +165,8 @@ fn panel_failures_revoke_sleep_and_ignore_failures_from_an_old_generation() {
 fn the_next_periodic_refresh_retries_a_failed_panel_and_rejects_old_completions() {
     let started = App::default()
         .transition(AppEvent::Wake(WakeReason::PowerOn))
+        .state
+        .transition(AppEvent::Telemetry(TelemetrySnapshot::default()))
         .state;
     let failed = started
         .transition(AppEvent::DisplayFinished {
@@ -70,6 +176,10 @@ fn the_next_periodic_refresh_retries_a_failed_panel_and_rejects_old_completions(
         .state;
     let retry = failed.transition(AppEvent::Tick(REFRESH_INTERVAL_MS));
     assert!(retry.actions.contains(&Action::Measure));
+    assert_eq!(retry.state.refresh, RefreshState::Idle);
+    let retry = retry
+        .state
+        .transition(AppEvent::Telemetry(TelemetrySnapshot::default()));
     assert!(retry.actions.contains(&Action::Display { id: 2 }));
     let late = retry.state.transition(AppEvent::DisplayFinished {
         id: 1,
@@ -156,6 +266,7 @@ fn busy_inputs_coalesce_to_one_request_for_the_latest_screen() {
     let mut app = App::default();
     let actions = step(&mut app, AppEvent::Wake(WakeReason::PowerOn));
     assert!(actions.contains(&Action::Measure));
+    let actions = step(&mut app, AppEvent::Telemetry(TelemetrySnapshot::default()));
     assert!(actions.contains(&Action::Display { id: 1 }));
     for _ in 0..1000 {
         assert!(!step(&mut app, AppEvent::Button(Button::Next))
@@ -214,6 +325,7 @@ fn sleep_waits_for_display_and_storage_and_refuses_timeout() {
     assert!(step(&mut app, AppEvent::StorageBusy(false)).contains(&Action::Sleep { seconds: 900 }));
     let mut app = App::default();
     step(&mut app, AppEvent::Wake(WakeReason::Timer));
+    step(&mut app, AppEvent::Telemetry(TelemetrySnapshot::default()));
     step(&mut app, AppEvent::RequestSleep);
     assert!(!step(&mut app, AppEvent::Tick(DISPLAY_TIMEOUT_MS - 1))
         .contains(&Action::Log(Fault::PanelTimeout)));
@@ -289,24 +401,27 @@ fn measurement_and_configuration_work_finish_before_sleep() {
         AppEvent::Configure(device_core::settings::Settings {
             refresh_seconds: 1800,
             rotation: 1,
+            ..Default::default()
         }),
     );
     assert_eq!(app.refresh_seconds, 1800);
     assert_eq!(app.rotation, device_core::geometry::Rotation::Landscape);
+    assert_eq!(app.refresh, RefreshState::Idle);
+    step(&mut app, AppEvent::MeasurementBusy(false));
     let id = match app.refresh {
         RefreshState::Updating { id, .. } => id,
         _ => panic!("configuration must redraw"),
     };
     step(&mut app, AppEvent::DisplayFinished { id, result: Ok(()) });
-    assert!(
-        step(&mut app, AppEvent::MeasurementBusy(false)).contains(&Action::Sleep { seconds: 1800 })
-    );
+    assert_eq!(app.refresh, RefreshState::Idle);
+    assert!(step(&mut app, AppEvent::RequestSleep).contains(&Action::Sleep { seconds: 1800 }));
     let previous = app;
     step(
         &mut app,
         AppEvent::Configure(device_core::settings::Settings {
             refresh_seconds: 0,
             rotation: 255,
+            ..Default::default()
         }),
     );
     assert_eq!(app, previous);
@@ -327,6 +442,7 @@ fn every_screen_direction_and_configuration_orientation_is_observable() {
             AppEvent::Configure(Settings {
                 refresh_seconds: 1800,
                 rotation,
+                ..Settings::default()
             }),
         );
         assert_eq!(app.rotation, expected);
@@ -357,6 +473,7 @@ fn every_screen_direction_and_configuration_orientation_is_observable() {
     let mut app = App::default();
     step(&mut app, AppEvent::Tick(900_000));
     assert_eq!(app.next_refresh_ms, 1_800_000);
+    step(&mut app, AppEvent::Telemetry(TelemetrySnapshot::default()));
     step(
         &mut app,
         AppEvent::RadioChanged {
@@ -377,5 +494,7 @@ fn every_screen_direction_and_configuration_orientation_is_observable() {
     );
     assert_eq!(app.refresh, RefreshState::Failed(Fault::Bus));
     let actions = step(&mut app, AppEvent::Button(Button::Refresh));
+    assert!(actions.contains(&Action::Measure));
+    let actions = step(&mut app, AppEvent::Telemetry(TelemetrySnapshot::default()));
     assert!(actions.iter().any(|a| matches!(a, Action::Display { .. })));
 }

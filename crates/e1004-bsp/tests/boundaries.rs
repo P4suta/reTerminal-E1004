@@ -66,6 +66,7 @@ fn settings_io_failure_at_every_operation_keeps_a_valid_committed_value() {
     let settings = Settings {
         refresh_seconds: 1800,
         rotation: 2,
+        ..Settings::default()
     };
     let original = Slots {
         slots: [encode(Settings::default(), 4), [0xff; SLOT_BYTES]],

@@ -20,6 +20,7 @@ impl SlotStorage for Flash {
                     Settings {
                         refresh_seconds: 86400,
                         rotation: 2,
+                        ..Settings::default()
                     },
                     500,
                 );
@@ -41,10 +42,12 @@ fn boot_reads_both_slots_and_preserves_the_readable_setting_without_trusting_fai
     let previous = Settings {
         refresh_seconds: 600,
         rotation: 1,
+        ..Settings::default()
     };
     let desired = Settings {
         refresh_seconds: 1800,
         rotation: 3,
+        ..Settings::default()
     };
     for failures in 0..4 {
         for contaminate in [false, true] {
@@ -66,7 +69,7 @@ fn boot_reads_both_slots_and_preserves_the_readable_setting_without_trusting_fai
                     if failures == 0 {
                         None
                     } else {
-                        Some(Fault::Storage)
+                        Some(Fault::SettingsStorage)
                     }
                 )
             );

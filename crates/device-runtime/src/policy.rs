@@ -56,6 +56,15 @@ pub fn display_is_current(app: App, id: u32) -> bool {
     matches!(app.refresh, RefreshState::Updating { id: active, .. } if active == id)
 }
 
+pub fn panel_fault(error: t133a01::Error) -> Fault {
+    match error {
+        t133a01::Error::BusyTimeout => Fault::PanelTimeout,
+        t133a01::Error::Transport
+        | t133a01::Error::InvalidFrame
+        | t133a01::Error::NotInitialized => Fault::Bus,
+    }
+}
+
 pub fn loaded_settings(
     first: &[u8; SLOT_BYTES],
     second: &[u8; SLOT_BYTES],
@@ -69,6 +78,6 @@ pub fn loaded_settings(
         {
             (Settings::default(), None)
         }
-        None => (Settings::default(), Some(Fault::Storage)),
+        None => (Settings::default(), Some(Fault::SettingsStorage)),
     }
 }

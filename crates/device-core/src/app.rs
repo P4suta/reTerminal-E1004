@@ -1,6 +1,6 @@
 use crate::{
     geometry::Rotation,
-    settings::{Settings, DEFAULT_REFRESH_SECONDS},
+    settings::{ResumePolicy, Settings, DEFAULT_REFRESH_SECONDS},
     telemetry::{Fault, RadioStatus, StorageStatus, TelemetrySnapshot, WakeReason},
 };
 
@@ -43,6 +43,7 @@ pub enum AppEvent {
     PanelFailed { id: u32, fault: Fault },
     StorageBusy(bool),
     StorageChanged(StorageStatus),
+    SettingsFailed,
     RadioChanged { wifi: RadioStatus, ble: RadioStatus },
     RequestSleep,
 }
@@ -99,6 +100,8 @@ pub struct App {
     pub sequence: u32,
     pub next_refresh_ms: u64,
     pub refresh_seconds: u32,
+    pub resume: ResumePolicy,
+    pub persisted_settings: Settings,
 }
 
 impl Default for App {
@@ -117,6 +120,8 @@ impl Default for App {
             sequence: 0,
             next_refresh_ms: REFRESH_INTERVAL_MS,
             refresh_seconds: DEFAULT_REFRESH_SECONDS,
+            resume: ResumePolicy::Last,
+            persisted_settings: Settings::default(),
         }
     }
 }
@@ -128,6 +133,17 @@ pub struct Transition {
 }
 
 impl App {
+    pub fn settings(self) -> Settings {
+        Settings {
+            refresh_seconds: self.refresh_seconds,
+            rotation: self.rotation as u8,
+            resume: self.resume,
+            screen: match self.resume {
+                ResumePolicy::Last => self.screen,
+                ResumePolicy::Status => ScreenId::Status,
+            },
+        }
+    }
     pub fn transition(mut self, event: AppEvent) -> Transition {
         let mut actions = [Action::None; MAX_ACTIONS];
         match event {
@@ -139,6 +155,10 @@ impl App {
                         actions,
                     };
                 }
+                let changed = self.refresh_seconds != settings.refresh_seconds
+                    || self.rotation as u8 != settings.rotation;
+                self.persisted_settings = settings;
+                self.resume = settings.resume;
                 self.refresh_seconds = settings.refresh_seconds;
                 self.rotation = match settings.rotation {
                     0 => Rotation::Portrait,
@@ -146,10 +166,12 @@ impl App {
                     2 => Rotation::InvertedPortrait,
                     _ => Rotation::InvertedLandscape,
                 };
-                self.next_refresh_ms = self
-                    .now_ms
-                    .saturating_add(u64::from(settings.refresh_seconds) * MILLISECONDS_PER_SECOND);
-                self.pending = true;
+                if changed {
+                    self.next_refresh_ms = self.now_ms.saturating_add(
+                        u64::from(settings.refresh_seconds) * MILLISECONDS_PER_SECOND,
+                    );
+                    self.pending = true;
+                }
             }
             AppEvent::Wake(reason) => {
                 self.diagnostics.wake = reason;
@@ -262,8 +284,22 @@ impl App {
                 }
             }
             AppEvent::StorageBusy(busy) => self.storage_busy = busy,
+            AppEvent::SettingsFailed => {
+                self.diagnostics.last_error = Some(Fault::SettingsStorage);
+                if self.screen == ScreenId::Diagnostics {
+                    self.pending = true;
+                }
+                actions[0] = Action::Log(Fault::SettingsStorage);
+            }
             AppEvent::StorageChanged(status) => {
-                if self.screen == ScreenId::Diagnostics && self.diagnostics.storage != status {
+                let changed = self.diagnostics.storage != status
+                    || (status == StorageStatus::Fault
+                        && self.diagnostics.last_error != Some(Fault::Storage));
+                if status == StorageStatus::Fault {
+                    self.diagnostics.last_error = Some(Fault::Storage);
+                    actions[0] = Action::Log(Fault::Storage);
+                }
+                if self.screen == ScreenId::Diagnostics && changed {
                     self.pending = true;
                 }
                 self.diagnostics.storage = status;
@@ -280,9 +316,13 @@ impl App {
             AppEvent::RequestSleep => self.sleep_requested = true,
         }
         if actions.contains(&Action::Measure) {
-            self.measurement_busy = true;
+            if self.measurement_busy {
+                actions[0] = Action::None;
+            } else {
+                self.measurement_busy = true;
+            }
         }
-        if self.pending && matches!(self.refresh, RefreshState::Idle) {
+        if self.pending && !self.measurement_busy && matches!(self.refresh, RefreshState::Idle) {
             self.sequence = self.sequence.wrapping_add(1);
             self.refresh = RefreshState::Updating {
                 id: self.sequence,

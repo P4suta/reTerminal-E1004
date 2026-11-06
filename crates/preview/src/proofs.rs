@@ -19,22 +19,43 @@ fn recording_budget_matches_wide_arithmetic_at_every_admitted_boundary() {
 #[kani::unwind(5)]
 fn a_cancelled_preview_update_cannot_be_presented_by_mode_switch_or_late_success() {
     let mut preview = Preview::default();
-    preview.event(AppEvent::Configure(device_core::settings::Settings {
-        rotation: kani::any::<u8>() % 4,
-        ..device_core::settings::Settings::default()
-    }));
-    assert_eq!(preview.shown().0.rotation, preview.shown().1);
+    let rotation = match kani::any::<u8>() % 4 {
+        0 => Rotation::Portrait,
+        1 => Rotation::Landscape,
+        2 => Rotation::InvertedPortrait,
+        _ => Rotation::InvertedLandscape,
+    };
+    let shown = App {
+        rotation,
+        ..App::default()
+    };
+    preview.presentation = Presentation::new(shown);
     preview.immediate = false;
     let before = preview.shown();
-    preview.event(AppEvent::Button(Button::Next));
-    let id = preview.app.sequence;
-    preview.event(AppEvent::Tick(DISPLAY_TIMEOUT_MS));
+    let id: u32 = kani::any();
+    preview.app = App {
+        rotation,
+        sequence: id,
+        screen: ScreenId::Diagnostics,
+        refresh: RefreshState::Updating { id, started_ms: 0 },
+        ..App::default()
+    };
+    preview.presentation.start(id, preview.app);
+    assert_eq!(preview.event_step(AppEvent::Tick(DISPLAY_TIMEOUT_MS)), None);
+    assert_eq!(preview.presentation.active_id(), None);
     preview.immediate = true;
     preview.complete_active();
-    preview.event(AppEvent::DisplayFinished { id, result: Ok(()) });
+    assert_eq!(
+        preview.event_step(AppEvent::DisplayFinished {
+            id: kani::any(),
+            result: Ok(())
+        }),
+        None
+    );
     assert_eq!(preview.shown(), before);
     assert_eq!(
         preview.app.refresh,
         RefreshState::Failed(Fault::PanelTimeout)
     );
+    kani::cover!(id == u32::MAX);
 }

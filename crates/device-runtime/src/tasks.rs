@@ -52,7 +52,7 @@ pub fn boot_settings(flash: &mut impl SlotStorage) -> (Settings, Option<Fault>) 
     (
         settings,
         if first.is_err() || second.is_err() {
-            Some(Fault::Storage)
+            Some(Fault::SettingsStorage)
         } else {
             error
         },
@@ -80,6 +80,9 @@ pub async fn application_loop(
             2 => Rotation::InvertedPortrait,
             _ => Rotation::InvertedLandscape,
         },
+        screen: settings.wake_screen(),
+        resume: settings.resume,
+        persisted_settings: settings,
         ..App::default()
     };
     app.diagnostics.last_error = error;
@@ -153,10 +156,7 @@ pub async fn panel_update(
         hardware.stop();
         *panel = t133a01::Panel::default();
     }
-    result.map_err(|error| match error {
-        t133a01::Error::BusyTimeout => Fault::PanelTimeout,
-        _ => Fault::Bus,
-    })
+    result.map_err(crate::policy::panel_fault)
 }
 
 async fn quiesce(system: &System) -> bool {
@@ -200,6 +200,7 @@ pub async fn bus_loop(
 ) {
     let mut panel = t133a01::Panel::default();
     let mut panel_sleeping = false;
+    let mut resume_attempt = None;
     loop {
         let request = match select(system.bus.receive(), system.sleep_request.wait()).await {
             Either::First(request) => request,
@@ -242,6 +243,17 @@ pub async fn bus_loop(
                     system.record(LogRecord::Event("sleep_deferred"));
                 }
                 if permitted {
+                    if let Some(app) = system.snapshot() {
+                        let desired = app.settings();
+                        if desired != app.persisted_settings && resume_attempt != Some(desired) {
+                            resume_attempt = Some(desired);
+                            save_settings(system, &mut flash, desired).await;
+                            system.button_sleep.signal(false);
+                            system.output_sleep.signal(false);
+                            system.events.send(AppEvent::RequestSleep).await;
+                            continue;
+                        }
+                    }
                     if !panel_sleeping {
                         let sleep = select(
                             Timer::after_millis(QUIESCE_TIMEOUT_MS),
@@ -281,17 +293,7 @@ pub async fn bus_loop(
                 system.events.send(AppEvent::RequestSleep).await;
             }
             BusRequest::Save(settings) => {
-                system.events.send(AppEvent::StorageBusy(true)).await;
-                if e1004_bsp::storage::save(&mut flash, settings).is_ok() {
-                    system.events.send(AppEvent::Configure(settings)).await;
-                } else {
-                    system.record(LogRecord::Fault(Fault::Storage));
-                    system
-                        .events
-                        .send(AppEvent::StorageChanged(StorageStatus::Fault))
-                        .await;
-                }
-                system.events.send(AppEvent::StorageBusy(false)).await;
+                save_settings(system, &mut flash, settings).await;
             }
             BusRequest::Diagnose => {
                 system.events.send(AppEvent::StorageBusy(true)).await;
@@ -301,6 +303,16 @@ pub async fn bus_loop(
             }
         }
     }
+}
+
+async fn save_settings(system: &System, flash: &mut impl SlotStorage, settings: Settings) {
+    system.events.send(AppEvent::StorageBusy(true)).await;
+    let event = match e1004_bsp::storage::save(flash, settings) {
+        Ok(()) => AppEvent::Configure(settings),
+        Err(_) => AppEvent::SettingsFailed,
+    };
+    system.events.send(event).await;
+    system.events.send(AppEvent::StorageBusy(false)).await;
 }
 
 pub async fn measurements(

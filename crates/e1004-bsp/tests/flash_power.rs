@@ -48,6 +48,7 @@ fn every_erase_and_program_byte_interruption_preserves_a_committed_setting() {
     let desired = Settings {
         refresh_seconds: 1800,
         rotation: 3,
+        ..Settings::default()
     };
     for generation in [7, u32::MAX] {
         let mut flash = Flash {

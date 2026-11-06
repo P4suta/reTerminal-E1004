@@ -151,6 +151,9 @@ pub struct Device {
     pub serial_read_failure: bool,
     pub arm_failure: Option<usize>,
     pub storage_failure: bool,
+    pub storage_fault_at: Option<usize>,
+    pub storage_calls: usize,
+    pub storage_fault_hits: usize,
     pub sleep_failure: bool,
     pub serial_write: SerialWrite,
     pub serial_writes: usize,
@@ -191,6 +194,9 @@ impl Board {
             serial_read_failure: false,
             arm_failure: None,
             storage_failure: false,
+            storage_fault_at: None,
+            storage_calls: 0,
+            storage_fault_hits: 0,
             sleep_failure: false,
             serial_write: SerialWrite::Partial,
             serial_writes: 0,
@@ -206,8 +212,10 @@ impl Board {
 }
 impl SlotStorage for Board {
     fn read(&mut self, slot: usize, bytes: &mut [u8; SLOT_BYTES]) -> Result<(), StorageError> {
-        let device = self.0.borrow();
-        if device.storage_failure {
+        let mut device = self.0.borrow_mut();
+        device.storage_calls += 1;
+        if device.storage_failure || device.storage_fault_at == Some(device.storage_calls) {
+            device.storage_fault_hits += 1;
             return Err(StorageError::Io);
         }
         *bytes = device.slots[slot];
@@ -215,7 +223,9 @@ impl SlotStorage for Board {
     }
     fn write(&mut self, slot: usize, offset: usize, bytes: &[u8]) -> Result<(), StorageError> {
         let mut device = self.0.borrow_mut();
-        if device.storage_failure {
+        device.storage_calls += 1;
+        if device.storage_failure || device.storage_fault_at == Some(device.storage_calls) {
+            device.storage_fault_hits += 1;
             return Err(StorageError::Io);
         }
         device
@@ -225,7 +235,10 @@ impl SlotStorage for Board {
         Ok(())
     }
     fn sync(&mut self) -> Result<(), StorageError> {
-        if self.0.borrow().storage_failure {
+        let mut device = self.0.borrow_mut();
+        device.storage_calls += 1;
+        if device.storage_failure || device.storage_fault_at == Some(device.storage_calls) {
+            device.storage_fault_hits += 1;
             Err(StorageError::Io)
         } else {
             Ok(())

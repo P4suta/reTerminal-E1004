@@ -104,6 +104,7 @@ fn settings_crc_format_and_recovery_reject_invalid_boundaries() {
         let settings = Settings {
             refresh_seconds: seconds,
             rotation: 3,
+            ..Settings::default()
         };
         assert_eq!(settings.valid(), valid);
         assert_eq!(decode(&encode(settings, 9)).is_some(), valid);
@@ -112,7 +113,8 @@ fn settings_crc_format_and_recovery_reject_invalid_boundaries() {
         assert_eq!(
             Settings {
                 rotation,
-                refresh_seconds: 900
+                refresh_seconds: 900,
+                ..Settings::default()
             }
             .valid(),
             rotation < 4
@@ -131,7 +133,7 @@ fn settings_crc_format_and_recovery_reject_invalid_boundaries() {
     );
     for index in [0usize, 4, 6, 7] {
         let mut unsupported = valid;
-        unsupported[index] ^= 1;
+        unsupported[index] = u8::MAX;
         let crc = crc32(&unsupported[..16]);
         unsupported[16..20].copy_from_slice(&crc.to_le_bytes());
         assert_eq!(decode(&unsupported), None);
@@ -217,6 +219,7 @@ fn interrupted_or_corrupt_settings_preserve_the_previous_committed_slot() {
     let changed = Settings {
         refresh_seconds: 1800,
         rotation: 1,
+        ..Settings::default()
     };
     let current = encode(changed, 42);
     assert_eq!(recover(&previous, &current), Some((changed, 42, 1)));

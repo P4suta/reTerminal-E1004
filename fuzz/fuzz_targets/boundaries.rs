@@ -8,6 +8,29 @@ mod console_properties;
 
 fuzz_target!(|data: &[u8]| {
     console_properties::check(data);
+    let ssid = data
+        .iter()
+        .take(32)
+        .map(|byte| char::from(b' ' + byte % 95))
+        .collect::<String>();
+    let password = data
+        .iter()
+        .rev()
+        .take(63)
+        .map(|byte| char::from(b' ' + byte % 95))
+        .collect::<String>();
+    if !ssid.is_empty() {
+        for password in [String::new(), password] {
+            let line = format!("wifi connect {ssid}\t{password}");
+            assert_eq!(
+                e1004_bsp::console::parse(&line),
+                Ok(e1004_bsp::console::Command::WifiConnect {
+                    ssid: &ssid,
+                    password: &password
+                })
+            );
+        }
+    }
     let mut input = e1004_bsp::console::LineInput::default();
     for byte in data {
         input.push(*byte);
@@ -18,7 +41,7 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(text) = core::str::from_utf8(data) {
         if xtask::bindings::validate(text).is_ok() {
             use quote::ToTokens;
-            let parsed=syn::parse_file(text).unwrap();
+            let parsed = syn::parse_file(text).unwrap();
             assert!(xtask::bindings::validate(&parsed.to_token_stream().to_string()).is_ok());
         }
         let mut preview = device_preview::Preview::default();
@@ -95,6 +118,10 @@ fuzz_target!(|data: &[u8]| {
                     Command::Sleep => "sleep".into(),
                     Command::SetRtc(value) => format!("rtc {value}"),
                     Command::SetInterval(value) => format!("interval {value}"),
+                    Command::Resume(policy) => match policy {
+                        ResumePolicy::Last => "resume last".into(),
+                        ResumePolicy::Status => "resume status".into(),
+                    },
                     Command::WifiScan => "wifi scan".into(),
                     Command::WifiConnect { ssid, password } => {
                         format!("wifi connect {ssid}\t{password}")
@@ -140,6 +167,16 @@ fuzz_target!(|data: &[u8]| {
         let settings = Settings {
             refresh_seconds: 60 + u32::from_le_bytes(raw[..4].try_into().unwrap()) % 86341,
             rotation: raw[4] % 4,
+            resume: if raw[4] & 4 == 0 {
+                ResumePolicy::Last
+            } else {
+                ResumePolicy::Status
+            },
+            screen: match raw[5] % 3 {
+                0 => ScreenId::Status,
+                1 => ScreenId::Diagnostics,
+                _ => ScreenId::Drawing,
+            },
         };
         let generation = u32::from_le_bytes(raw[5..9].try_into().unwrap());
         assert_eq!(
@@ -165,7 +202,10 @@ fuzz_target!(|data: &[u8]| {
     let mut app = App::default();
     for byte in data.iter().take(32) {
         let event = match byte % 9 {
-            8 => AppEvent::PanelFailed {id:app.sequence,fault:Fault::Bus},
+            8 => AppEvent::PanelFailed {
+                id: app.sequence,
+                fault: Fault::Bus,
+            },
             0 => AppEvent::Wake(WakeReason::Timer),
             1 => AppEvent::Button(Button::Previous),
             2 => AppEvent::Button(Button::Next),

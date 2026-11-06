@@ -28,6 +28,7 @@ const PREVIEW_HARNESSES: &[&str] = &[
 const TOOL_HARNESSES: &[&str] =
     &["evidence::proofs::mutation_verdict_requires_nonempty_complete_counts_without_overflow"];
 const RUNTIME_HARNESSES: &[&str] = &[
+    "proofs::panel_timeout_classification_preserves_the_error_kind",
     "proofs::sleep_permission_requires_current_ticket_and_every_quiet_boundary",
     "proofs::an_emitted_sleep_action_passes_the_request_boundary",
     "proofs::display_requests_match_only_the_active_generation",

@@ -3,6 +3,93 @@ use crate::{app::*, geometry::*, settings::*, telemetry::*};
 
 #[kani::proof]
 #[kani::unwind(5)]
+fn acknowledged_screen_policy_preserves_navigation_and_deadline() {
+    let refresh_seconds: u32 = kani::any();
+    kani::assume((MIN_REFRESH_SECONDS..=MAX_REFRESH_SECONDS).contains(&refresh_seconds));
+    let app = App {
+        refresh_seconds,
+        screen: match kani::any::<u8>() % 3 {
+            0 => ScreenId::Status,
+            1 => ScreenId::Diagnostics,
+            _ => ScreenId::Drawing,
+        },
+        resume: if kani::any() {
+            ResumePolicy::Last
+        } else {
+            ResumePolicy::Status
+        },
+        rotation: match kani::any::<u8>() % 4 {
+            0 => Rotation::Portrait,
+            1 => Rotation::Landscape,
+            2 => Rotation::InvertedPortrait,
+            _ => Rotation::InvertedLandscape,
+        },
+        next_refresh_ms: kani::any(),
+        now_ms: kani::any(),
+        ..App::default()
+    };
+    let desired = app.settings();
+    assert_eq!(desired.refresh_seconds, app.refresh_seconds);
+    assert_eq!(desired.rotation, app.rotation as u8);
+    assert_eq!(desired.resume, app.resume);
+    assert_eq!(
+        desired.screen,
+        if app.resume == ResumePolicy::Last {
+            app.screen
+        } else {
+            ScreenId::Status
+        }
+    );
+    assert_eq!(desired.wake_screen(), desired.screen);
+    let resume = if kani::any() {
+        ResumePolicy::Last
+    } else {
+        ResumePolicy::Status
+    };
+    let desired = Settings {
+        resume,
+        screen: Settings { resume, ..desired }.wake_screen(),
+        ..desired
+    };
+    let saved = app.transition(AppEvent::Configure(desired));
+    assert_eq!(saved.state.screen, app.screen);
+    assert_eq!(saved.state.persisted_settings, desired);
+    assert_eq!(saved.state.next_refresh_ms, app.next_refresh_ms);
+    assert_eq!(saved.actions, [Action::None; 3]);
+    kani::cover!(app.resume == ResumePolicy::Status && app.screen == ScreenId::Drawing);
+    kani::cover!(desired.resume != app.resume);
+}
+
+#[kani::proof]
+#[kani::unwind(33)]
+fn previous_settings_format_preserves_values_and_rejects_reserved_payload() {
+    let seconds: u32 = kani::any();
+    let rotation: u8 = kani::any();
+    kani::assume(
+        (MIN_REFRESH_SECONDS..=MAX_REFRESH_SECONDS).contains(&seconds) && rotation < ROTATION_COUNT,
+    );
+    let settings = Settings {
+        refresh_seconds: seconds,
+        rotation,
+        ..Settings::default()
+    };
+    let generation: u32 = kani::any();
+    let mut bytes = encode(settings, generation);
+    bytes[4] = 1;
+    let crc = crc32(&bytes[..16]);
+    bytes[16..20].copy_from_slice(&crc.to_le_bytes());
+    assert_eq!(decode(&bytes), Some((settings, generation)));
+    let reserved: u8 = kani::any();
+    kani::assume(reserved != 0);
+    let offset = if kani::any() { 6 } else { 7 };
+    bytes[offset] = reserved;
+    let crc = crc32(&bytes[..16]);
+    bytes[16..20].copy_from_slice(&crc.to_le_bytes());
+    assert_eq!(decode(&bytes), None);
+}
+
+#[kani::proof]
+#[kani::unwind(5)]
 fn panel_failure_revokes_sleep_and_stale_failures_cannot_change_state() {
     let mut app = App::default();
     app.sequence = kani::any();
@@ -192,6 +279,16 @@ fn settings_round_trip_and_single_bit_corruption() {
     let settings = Settings {
         refresh_seconds,
         rotation,
+        resume: if kani::any() {
+            ResumePolicy::Last
+        } else {
+            ResumePolicy::Status
+        },
+        screen: match kani::any::<u8>() % 3 {
+            0 => ScreenId::Status,
+            1 => ScreenId::Diagnostics,
+            _ => ScreenId::Drawing,
+        },
     };
     let generation: u32 = kani::any();
     let bytes = encode(settings, generation);
@@ -247,6 +344,8 @@ fn updating_never_sleeps_or_starts_a_second_display() {
 fn timeout_never_becomes_success_or_sleep() {
     let mut app = App::default()
         .transition(AppEvent::Wake(WakeReason::Timer))
+        .state
+        .transition(AppEvent::Telemetry(TelemetrySnapshot::default()))
         .state;
     let now: u64 = kani::any();
     kani::assume(now >= DISPLAY_TIMEOUT_MS);
@@ -271,7 +370,108 @@ fn timeout_never_becomes_success_or_sleep() {
         .state
         .transition(AppEvent::Tick(now.saturating_add(REFRESH_INTERVAL_MS)));
     assert!(retry.actions.contains(&Action::Measure));
+    assert_eq!(retry.state.refresh, RefreshState::Idle);
+    let retry = retry
+        .state
+        .transition(AppEvent::Telemetry(TelemetrySnapshot::default()));
     assert!(retry.actions.contains(&Action::Display { id: 2 }));
+}
+
+#[kani::proof]
+#[kani::unwind(5)]
+fn measurement_barrier_cannot_emit_display_or_sleep() {
+    let app = App {
+        measurement_busy: true,
+        pending: kani::any(),
+        sleep_requested: kani::any(),
+        sequence: kani::any(),
+        ..App::default()
+    };
+    let event = match kani::any::<u8>() % 6 {
+        0 => AppEvent::Wake(WakeReason::Timer),
+        1 => AppEvent::Button(Button::Refresh),
+        2 => AppEvent::Tick(kani::any()),
+        3 => AppEvent::Button(Button::Next),
+        4 => AppEvent::RequestSleep,
+        _ => AppEvent::SettingsFailed,
+    };
+    let next = app.transition(event);
+    assert!(next.state.measurement_busy);
+    assert!(!next.actions.iter().any(|action| matches!(
+        action,
+        Action::Measure | Action::Display { .. } | Action::Sleep { .. }
+    )));
+    let ready = next
+        .state
+        .transition(AppEvent::Telemetry(TelemetrySnapshot::default()));
+    assert!(!ready.state.measurement_busy);
+    if next.state.pending {
+        assert!(ready.actions.contains(&Action::Display {
+            id: app.sequence.wrapping_add(1)
+        }));
+    }
+    kani::cover!(next.state.pending && app.sequence == u32::MAX);
+}
+
+#[kani::proof]
+#[kani::unwind(5)]
+fn settings_faults_preserve_the_sd_status() {
+    let sequence = kani::any();
+    let app = App {
+        sequence,
+        refresh: match kani::any::<u8>() % 3 {
+            0 => RefreshState::Idle,
+            1 => RefreshState::Updating {
+                id: sequence,
+                started_ms: kani::any(),
+            },
+            _ => RefreshState::Failed(Fault::Bus),
+        },
+        measurement_busy: kani::any(),
+        storage_busy: kani::any(),
+        screen: match kani::any::<u8>() % 3 {
+            0 => ScreenId::Status,
+            1 => ScreenId::Diagnostics,
+            _ => ScreenId::Drawing,
+        },
+        diagnostics: Diagnostics {
+            storage: match kani::any::<u8>() % 3 {
+                0 => StorageStatus::Absent,
+                1 => StorageStatus::Ready,
+                _ => StorageStatus::Fault,
+            },
+            ..Diagnostics::default()
+        },
+        ..App::default()
+    };
+    let next = app.transition(AppEvent::SettingsFailed);
+    assert_eq!(next.state.diagnostics.storage, app.diagnostics.storage);
+    assert_eq!(
+        next.state.diagnostics.last_error,
+        Some(Fault::SettingsStorage)
+    );
+    assert!(next.actions.contains(&Action::Log(Fault::SettingsStorage)));
+    assert_eq!(next.state.persisted_settings, app.persisted_settings);
+    let displays = app.screen == ScreenId::Diagnostics
+        && !app.measurement_busy
+        && app.refresh == RefreshState::Idle;
+    assert_eq!(
+        next.actions
+            .iter()
+            .any(|action| matches!(action, Action::Display { .. })),
+        displays,
+    );
+    assert_eq!(
+        next.state.pending,
+        app.screen == ScreenId::Diagnostics && !displays
+    );
+    assert_eq!(next.state.measurement_busy, app.measurement_busy);
+    if !displays {
+        assert_eq!(next.state.refresh, app.refresh);
+    }
+    kani::cover!(app.diagnostics.storage == StorageStatus::Ready);
+    kani::cover!(displays);
+    kani::cover!(next.state.pending);
 }
 
 #[kani::proof]

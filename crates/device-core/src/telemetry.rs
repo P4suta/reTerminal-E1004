@@ -112,6 +112,7 @@ pub enum Fault {
     Bus,
     PanelTimeout,
     Storage,
+    SettingsStorage,
     InvalidRtc,
     InvalidInput,
 }

@@ -86,12 +86,31 @@ pub async fn command(system: &System, io: &mut impl ConsoleIo, line: &str) -> bo
             io.diagnose(false);
         }
         Ok(Command::SetInterval(refresh_seconds)) => {
-            let rotation = system.snapshot().map_or(0, |app| app.rotation as u8);
+            let settings = system
+                .snapshot()
+                .map_or_else(Settings::default, |app| app.settings());
             return bus_command(
                 system,
                 BusRequest::Save(Settings {
                     refresh_seconds,
-                    rotation,
+                    ..settings
+                }),
+            )
+            .await;
+        }
+        Ok(Command::Resume(resume)) => {
+            let settings = system
+                .snapshot()
+                .map_or_else(Settings::default, |app| Settings {
+                    screen: app.screen,
+                    ..app.settings()
+                });
+            return bus_command(
+                system,
+                BusRequest::Save(Settings {
+                    resume,
+                    screen: Settings { resume, ..settings }.wake_screen(),
+                    ..settings
                 }),
             )
             .await;
@@ -106,7 +125,7 @@ pub async fn command(system: &System, io: &mut impl ConsoleIo, line: &str) -> bo
         },
         Ok(Command::Status) => {
             if let Some(app) = system.snapshot() {
-                if !emit(io,format_args!("event=status screen={:?} interval_s={} refresh={:?} diagnostics={:?} lost_logs={}\r\n",app.screen,app.refresh_seconds,app.refresh,app.diagnostics,system.lost_logs.load(Ordering::Relaxed))).await { return false; }
+                if !emit(io,format_args!("event=status screen={:?} resume={:?} saved_screen={:?} interval_s={} refresh={:?} diagnostics={:?} lost_logs={}\r\n",app.screen,app.resume,app.persisted_settings.screen,app.refresh_seconds,app.refresh,app.diagnostics,system.lost_logs.load(Ordering::Relaxed))).await { return false; }
                 return emit(
                     io,
                     format_args!("event=telemetry value={:?}\r\n", app.telemetry),

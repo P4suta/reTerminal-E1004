@@ -142,6 +142,7 @@ fn all_measurement_and_radio_states_have_meaningful_text() {
         Fault::Bus,
         Fault::PanelTimeout,
         Fault::Storage,
+        Fault::SettingsStorage,
         Fault::InvalidRtc,
         Fault::InvalidInput,
     ] {

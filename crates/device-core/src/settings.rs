@@ -1,3 +1,5 @@
+use crate::app::ScreenId;
+
 pub const SLOT_BYTES: usize = 24;
 pub const DEFAULT_REFRESH_SECONDS: u32 = 900;
 pub const MIN_REFRESH_SECONDS: u32 = 60;
@@ -6,10 +8,12 @@ pub const ROTATION_COUNT: u8 = 4;
 pub const COMMIT_OFFSET: usize = 20;
 pub const COMMIT_BYTES: usize = 4;
 const MAGIC: &[u8; 4] = b"E104";
-const FORMAT_VERSION: u8 = 1;
+const FORMAT_VERSION: u8 = 2;
+const PREVIOUS_FORMAT_VERSION: u8 = 1;
 const VERSION_OFFSET: usize = 4;
 const ROTATION_OFFSET: usize = 5;
-const RESERVED_OFFSETS: [usize; 2] = [6, 7];
+const RESUME_OFFSET: usize = 6;
+const SCREEN_OFFSET: usize = 7;
 const GENERATION_RANGE: core::ops::Range<usize> = 8..12;
 const INTERVAL_RANGE: core::ops::Range<usize> = 12..16;
 const CRC_PAYLOAD_BYTES: usize = 16;
@@ -23,6 +27,15 @@ const GENERATION_HALF_RANGE: u32 = 1 << 31;
 pub struct Settings {
     pub refresh_seconds: u32,
     pub rotation: u8,
+    pub resume: ResumePolicy,
+    pub screen: ScreenId,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ResumePolicy {
+    #[default]
+    Last,
+    Status,
 }
 
 impl Default for Settings {
@@ -30,6 +43,8 @@ impl Default for Settings {
         Self {
             refresh_seconds: DEFAULT_REFRESH_SECONDS,
             rotation: 0,
+            resume: ResumePolicy::Last,
+            screen: ScreenId::Status,
         }
     }
 }
@@ -46,6 +61,12 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 }
 
 impl Settings {
+    pub fn wake_screen(self) -> ScreenId {
+        match self.resume {
+            ResumePolicy::Last => self.screen,
+            ResumePolicy::Status => ScreenId::Status,
+        }
+    }
     pub fn valid(self) -> bool {
         (MIN_REFRESH_SECONDS..=MAX_REFRESH_SECONDS).contains(&self.refresh_seconds)
             && self.rotation < ROTATION_COUNT
@@ -57,6 +78,15 @@ pub fn encode(settings: Settings, generation: u32) -> [u8; SLOT_BYTES] {
     bytes[..MAGIC.len()].copy_from_slice(MAGIC);
     bytes[VERSION_OFFSET] = FORMAT_VERSION;
     bytes[ROTATION_OFFSET] = settings.rotation;
+    bytes[RESUME_OFFSET] = match settings.resume {
+        ResumePolicy::Last => 0,
+        ResumePolicy::Status => 1,
+    };
+    bytes[SCREEN_OFFSET] = match settings.screen {
+        ScreenId::Status => 0,
+        ScreenId::Diagnostics => 1,
+        ScreenId::Drawing => 2,
+    };
     bytes[GENERATION_RANGE].copy_from_slice(&generation.to_le_bytes());
     bytes[INTERVAL_RANGE].copy_from_slice(&settings.refresh_seconds.to_le_bytes());
     let crc = crc32(&bytes[..CRC_PAYLOAD_BYTES]);
@@ -67,12 +97,7 @@ pub fn encode(settings: Settings, generation: u32) -> [u8; SLOT_BYTES] {
 
 pub fn decode(bytes: &[u8]) -> Option<(Settings, u32)> {
     let bytes: &[u8; SLOT_BYTES] = bytes.try_into().ok()?;
-    if &bytes[..MAGIC.len()] != MAGIC
-        || bytes[VERSION_OFFSET] != FORMAT_VERSION
-        || bytes[RESERVED_OFFSETS[0]] != 0
-        || bytes[RESERVED_OFFSETS[1]] != 0
-        || &bytes[COMMIT_OFFSET..] != COMMIT_MARKER
-    {
+    if &bytes[..MAGIC.len()] != MAGIC || &bytes[COMMIT_OFFSET..] != COMMIT_MARKER {
         return None;
     }
     let crc = u32::from_le_bytes(bytes[CRC_RANGE].try_into().ok()?);
@@ -80,9 +105,30 @@ pub fn decode(bytes: &[u8]) -> Option<(Settings, u32)> {
         return None;
     }
     let generation = u32::from_le_bytes(bytes[GENERATION_RANGE].try_into().ok()?);
+    let (resume, screen) = match bytes[VERSION_OFFSET] {
+        PREVIOUS_FORMAT_VERSION if bytes[RESUME_OFFSET] == 0 && bytes[SCREEN_OFFSET] == 0 => {
+            (ResumePolicy::Last, ScreenId::Status)
+        }
+        FORMAT_VERSION => (
+            match bytes[RESUME_OFFSET] {
+                0 => ResumePolicy::Last,
+                1 => ResumePolicy::Status,
+                _ => return None,
+            },
+            match bytes[SCREEN_OFFSET] {
+                0 => ScreenId::Status,
+                1 => ScreenId::Diagnostics,
+                2 => ScreenId::Drawing,
+                _ => return None,
+            },
+        ),
+        _ => return None,
+    };
     let settings = Settings {
         refresh_seconds: u32::from_le_bytes(bytes[INTERVAL_RANGE].try_into().ok()?),
         rotation: bytes[ROTATION_OFFSET],
+        resume,
+        screen,
     };
     settings.valid().then_some((settings, generation))
 }

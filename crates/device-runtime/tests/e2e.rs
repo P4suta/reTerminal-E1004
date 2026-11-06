@@ -214,6 +214,287 @@ macro_rules! boot {
     };
 }
 
+#[test]
+fn switching_resume_policy_saves_the_active_screen_without_an_extra_sleep_write() {
+    use device_core::settings::{ResumePolicy, Settings};
+    let _clock = clock();
+    for (initial, resume, command) in [
+        (ResumePolicy::Status, ResumePolicy::Last, "resume last"),
+        (ResumePolicy::Last, ResumePolicy::Status, "resume status"),
+    ] {
+        for screen in [ScreenId::Status, ScreenId::Diagnostics, ScreenId::Drawing] {
+            embassy_time::MockDriver::get().reset();
+            boot!(board, system, frame, executor, |board: &Board| {
+                let mut device = board.0.borrow_mut();
+                device.buttons[1] = false;
+                device.slots[0] = device_core::settings::encode(
+                    Settings {
+                        refresh_seconds: 1800,
+                        rotation: 3,
+                        resume: initial,
+                        screen: ScreenId::Status,
+                    },
+                    7,
+                );
+            });
+            executor.advance(1000);
+            match screen {
+                ScreenId::Status => {}
+                ScreenId::Diagnostics => system
+                    .events
+                    .try_send(AppEvent::Button(Button::Next))
+                    .unwrap(),
+                ScreenId::Drawing => system
+                    .events
+                    .try_send(AppEvent::Button(Button::Previous))
+                    .unwrap(),
+            }
+            assert!(executor.until(3000, || system
+                .presented()
+                .is_some_and(|app| app.screen == screen)
+                && system
+                    .snapshot()
+                    .is_some_and(|app| app.refresh == RefreshState::Idle)));
+            board.command(command);
+            assert!(executor.until(1000, || system
+                .snapshot()
+                .is_some_and(|app| app.persisted_settings.resume == resume)));
+            let (saved, error) = loaded(&mut board);
+            assert_eq!(error, None);
+            assert_eq!(saved.resume, resume);
+            assert_eq!(
+                saved.screen,
+                if resume == ResumePolicy::Last {
+                    screen
+                } else {
+                    ScreenId::Status
+                }
+            );
+            assert_eq!(saved.refresh_seconds, 1800);
+            assert_eq!(saved.rotation, 3);
+            let writes = board
+                .0
+                .borrow()
+                .trace
+                .iter()
+                .filter(|line| line.starts_with("flash "))
+                .count();
+            board.0.borrow_mut().buttons[1] = true;
+            assert!(executor.until(3000, || board.0.borrow().sleeping.is_some()));
+            assert_eq!(
+                board
+                    .0
+                    .borrow()
+                    .trace
+                    .iter()
+                    .filter(|line| line.starts_with("flash "))
+                    .count(),
+                writes
+            );
+        }
+    }
+}
+
+#[test]
+fn boot_waits_for_measurements_and_draws_once() {
+    let _clock = clock();
+    for failed_sensor in [false, true] {
+        embassy_time::MockDriver::get().reset();
+        boot!(board, system, frame, executor, |board: &Board| {
+            board.0.borrow_mut().sensor_failure =
+                failed_sensor.then_some(device_runtime::measurements::IoFailure::Absent);
+        });
+        assert!(executor.until(5000, || board.0.borrow().sleeping.is_some()));
+        let device = board.0.borrow();
+        assert_eq!(
+            device.frames.len(),
+            1,
+            "boot must wait for the completed measurement"
+        );
+        let shown = system.presented().unwrap();
+        assert_eq!(
+            matches!(shown.telemetry.temperature, Sample::Missing),
+            failed_sensor
+        );
+        assert!(!matches!(shown.telemetry.temperature, Sample::Unavailable));
+        assert!(!shown.measurement_busy);
+    }
+}
+
+#[test]
+fn settings_fault_matrix_preserves_sd_status_and_reports_the_actual_operation() {
+    let _clock = clock();
+    let mut baseline = Board::new();
+    e1004_bsp::storage::save(&mut baseline, Default::default()).unwrap();
+    let save_operations = baseline.0.borrow().storage_calls;
+    assert!(save_operations > 0);
+    let mut injected = 0;
+    for card in [
+        StorageStatus::Absent,
+        StorageStatus::Ready,
+        StorageStatus::Fault,
+    ] {
+        for operation in 1..=save_operations {
+            embassy_time::MockDriver::get().reset();
+            boot!(board, system, frame, executor, |board: &Board| {
+                let mut device = board.0.borrow_mut();
+                device.buttons[1] = false;
+                device.card = card;
+                device.slots[0] = device_core::settings::encode(Default::default(), 0);
+            });
+            executor.advance(1000);
+            board.command("diagnose");
+            executor.advance(500);
+            assert_eq!(system.snapshot().unwrap().diagnostics.storage, card);
+            {
+                let mut device = board.0.borrow_mut();
+                device.storage_calls = 0;
+                device.storage_fault_at = Some(operation);
+            }
+            board.command("interval 1800");
+            assert!(
+                executor.until(2000, || board.0.borrow().storage_fault_hits == 1
+                    && system.events.is_empty()
+                    && system.snapshot().is_some_and(|app| !app.storage_busy))
+            );
+            executor.advance(100);
+            let app = system.snapshot().unwrap();
+            assert_eq!(
+                app.diagnostics.storage, card,
+                "settings failure must preserve the SD result: operation={operation}"
+            );
+            assert_eq!(
+                format!("{:?}", app.diagnostics.last_error),
+                "Some(SettingsStorage)"
+            );
+            assert_eq!(app.refresh_seconds, 900);
+            assert!(board.output().contains("fault=SettingsStorage"));
+            board.0.borrow_mut().storage_fault_at = None;
+            board.command("interval 1800");
+            assert!(executor.until(2000, || system
+                .snapshot()
+                .is_some_and(|app| app.refresh_seconds == 1800)));
+            assert_eq!(board.0.borrow().storage_fault_hits, 1);
+            assert_eq!(system.snapshot().unwrap().diagnostics.storage, card);
+            injected += board.0.borrow().storage_fault_hits;
+        }
+    }
+    assert_eq!(injected, save_operations * 3);
+}
+
+#[test]
+fn screen_policy_survives_real_sleep_and_restart_without_rewriting_unchanged_settings() {
+    let _clock = clock();
+    for policy in ["last", "status"] {
+        for screen in [ScreenId::Diagnostics, ScreenId::Drawing] {
+            for wake in [WakeReason::Timer, WakeReason::Button, WakeReason::PowerOn] {
+                embassy_time::MockDriver::get().reset();
+                boot!(board, system, frame, executor, |board: &Board| {
+                    board.0.borrow_mut().buttons[1] = false;
+                });
+                executor.advance(1000);
+                board.command(&format!("resume {policy}"));
+                executor.advance(500);
+                for _ in 0..if screen == ScreenId::Drawing { 2 } else { 1 } {
+                    system
+                        .events
+                        .try_send(AppEvent::Button(Button::Next))
+                        .unwrap();
+                }
+                assert!(executor.until(3000, || system
+                    .presented()
+                    .is_some_and(|app| app.screen == screen)
+                    && system
+                        .snapshot()
+                        .is_some_and(|app| app.refresh == RefreshState::Idle)));
+                board.0.borrow_mut().buttons[1] = true;
+                assert!(executor.until(3000, || board.0.borrow().sleeping.is_some()));
+                drop(executor);
+                let (settings, error) = loaded(&mut board);
+                assert_eq!(error, None);
+                let writes = board
+                    .0
+                    .borrow()
+                    .trace
+                    .iter()
+                    .filter(|line| line.starts_with("flash "))
+                    .count();
+                board.0.borrow_mut().sleeping = None;
+                let reboot = System::new(Radios {
+                    wifi: false,
+                    ble: false,
+                });
+                let mut executor = Executor::new();
+                executor.spawn(application_loop(&reboot, settings, error, wake, || {
+                    (12345, 654321)
+                }));
+                executor.spawn(bus_loop(&reboot, board.clone(), board.clone(), &mut frame));
+                executor.spawn(measurements(&reboot, board.clone(), |_| {}));
+                executor.spawn(buttons_loop(&reboot, board.clone()));
+                executor.spawn(console_loop(&reboot, board.clone(), "fixture"));
+                executor.spawn(ticks(&reboot));
+                assert!(executor.until(5000, || board.0.borrow().sleeping.is_some()));
+                let expected = if policy == "last" {
+                    screen
+                } else {
+                    ScreenId::Status
+                };
+                assert_eq!(
+                    reboot.presented().unwrap().screen,
+                    expected,
+                    "policy={policy}, wake={wake:?}"
+                );
+                assert_eq!(
+                    board
+                        .0
+                        .borrow()
+                        .trace
+                        .iter()
+                        .filter(|line| line.starts_with("flash "))
+                        .count(),
+                    writes,
+                    "unchanged wake cycles must not wear flash"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn rapid_measurement_and_navigation_requests_coalesce_before_sleep() {
+    let _clock = clock();
+    boot!(board, system, frame, executor, |board: &Board| {
+        board.0.borrow_mut().buttons[1] = false;
+    });
+    executor.advance(1000);
+    let before = board.0.borrow().frames.len();
+    system
+        .events
+        .try_send(AppEvent::Button(Button::Refresh))
+        .unwrap();
+    executor.advance(1);
+    for index in 0..1000 {
+        system
+            .events
+            .try_send(AppEvent::Button(if index % 2 == 0 {
+                Button::Refresh
+            } else {
+                Button::Next
+            }))
+            .unwrap();
+        executor.advance(0);
+    }
+    board.0.borrow_mut().buttons[1] = true;
+    assert!(executor.until(5000, || board.0.borrow().sleeping.is_some()));
+    assert_eq!(
+        board.0.borrow().frames.len() - before,
+        1,
+        "requests during measurement must share one sample and final display"
+    );
+    assert_eq!(system.presented().unwrap().screen, ScreenId::Drawing);
+    assert!(!system.snapshot().unwrap().measurement_busy);
+}
+
 #[cfg(feature = "ble")]
 #[test]
 fn every_radio_combination_rotation_and_screen_survives_boot_input_sleep_and_wake() {
@@ -240,6 +521,7 @@ fn every_radio_combination_rotation_and_screen_survives_boot_input_sleep_and_wak
                             device_core::settings::Settings {
                                 refresh_seconds: interval,
                                 rotation,
+                                ..Default::default()
                             },
                             1,
                         );
@@ -301,9 +583,110 @@ fn every_radio_combination_rotation_and_screen_survives_boot_input_sleep_and_wak
                 let actual = board.0.borrow().frames.last().unwrap().clone();
                 assert!(actual==expected,"wire framebuffer differs at {:?}: mode={mode}, rotation={rotation}, screen={screen}",actual.iter().zip(&expected).position(|(left,right)|left!=right));
                 drop(executor);
-                assert_eq!(loaded(&mut board).0.rotation, rotation);
+                let (settings, error) = loaded(&mut board);
+                assert_eq!(error, None);
+                assert_eq!(settings.rotation, rotation);
+                let selected = [ScreenId::Status, ScreenId::Diagnostics, ScreenId::Drawing][screen];
+                let writes = board
+                    .0
+                    .borrow()
+                    .trace
+                    .iter()
+                    .filter(|line| line.starts_with("flash "))
+                    .count();
+                board.0.borrow_mut().sleeping = None;
+                let reboot = System::new(capabilities);
+                let mut executor = Executor::new();
+                executor.spawn(application_loop(
+                    &reboot,
+                    settings,
+                    error,
+                    WakeReason::Timer,
+                    || (12345, 654321),
+                ));
+                executor.spawn(bus_loop(&reboot, board.clone(), board.clone(), &mut frame));
+                executor.spawn(measurements(&reboot, board.clone(), |_| {}));
+                executor.spawn(buttons_loop(&reboot, board.clone()));
+                executor.spawn(console_loop(&reboot, board.clone(), "fixture"));
+                executor.spawn(ticks(&reboot));
+                if capabilities.wifi {
+                    executor.spawn(device_runtime::wifi::wifi_loop(&reboot, wifi.clone()));
+                }
+                if capabilities.ble {
+                    executor.spawn(device_runtime::ble::ble_loop(
+                        &reboot,
+                        hci::Factory(hci.clone()),
+                    ));
+                }
+                assert!(executor.until(5000, || board.0.borrow().sleeping.is_some()));
+                let restored = reboot.presented().unwrap();
+                assert_eq!(restored.screen, selected);
+                assert_eq!(restored.rotation as u8, rotation);
+                assert_eq!(restored.refresh_seconds, interval);
+                assert_eq!(restored.diagnostics.wake, WakeReason::Timer);
+                assert_eq!(
+                    board
+                        .0
+                        .borrow()
+                        .trace
+                        .iter()
+                        .filter(|line| line.starts_with("flash "))
+                        .count(),
+                    writes
+                );
+                assert!(reboot.radios_quiet());
             }
         }
+    }
+}
+
+#[test]
+fn failed_screen_retention_is_reported_once_and_preserves_a_committed_screen() {
+    let _clock = clock();
+    let mut baseline = Board::new();
+    e1004_bsp::storage::save(&mut baseline, Default::default()).unwrap();
+    let operations = baseline.0.borrow().storage_calls;
+    for operation in 1..=operations {
+        embassy_time::MockDriver::get().reset();
+        boot!(board, system, frame, executor, |board: &Board| {
+            let mut device = board.0.borrow_mut();
+            device.buttons[1] = false;
+            device.slots[0] = device_core::settings::encode(Default::default(), 0);
+            device.card = StorageStatus::Ready;
+        });
+        executor.advance(1000);
+        board.command("diagnose");
+        executor.advance(500);
+        system
+            .events
+            .try_send(AppEvent::Button(Button::Previous))
+            .unwrap();
+        assert!(executor.until(3000, || system
+            .presented()
+            .is_some_and(|app| app.screen == ScreenId::Drawing)
+            && system
+                .snapshot()
+                .is_some_and(|app| app.refresh == RefreshState::Idle)));
+        {
+            let mut device = board.0.borrow_mut();
+            device.storage_calls = 0;
+            device.storage_fault_at = Some(operation);
+            device.buttons[1] = true;
+        }
+        assert!(executor.until(5000, || board.0.borrow().sleeping.is_some()));
+        assert_eq!(board.0.borrow().storage_fault_hits, 1);
+        assert_eq!(board.0.borrow().storage_calls, operation);
+        let app = system.snapshot().unwrap();
+        assert_eq!(app.diagnostics.storage, StorageStatus::Ready);
+        assert_eq!(app.diagnostics.last_error, Some(Fault::SettingsStorage));
+        assert!(board.output().contains("fault=SettingsStorage"));
+        drop(executor);
+        let (settings, error) = loaded(&mut board);
+        assert_eq!(error, None);
+        assert!(matches!(
+            settings.screen,
+            ScreenId::Status | ScreenId::Drawing
+        ));
     }
 }
 
@@ -458,6 +841,41 @@ fn failed_console_flush_blocks_sleep_and_console_resumes_for_repair() {
 #[test]
 fn permanently_busy_panel_times_out_cleans_up_and_manual_refresh_recovers() {
     let _clock = clock();
+    for (busy, cancel, transport, valid_frame, expected) in [
+        (true, false, false, true, Fault::PanelTimeout),
+        (true, true, false, true, Fault::PanelTimeout),
+        (false, false, true, true, Fault::Bus),
+        (false, false, false, false, Fault::Bus),
+    ] {
+        embassy_time::MockDriver::get().reset();
+        let system = System::new(Radios {
+            wifi: false,
+            ble: false,
+        });
+        let board = Board::new();
+        board.0.borrow_mut().busy_forever = busy;
+        board.0.borrow_mut().spi_failure = transport;
+        let frame = vec![PACKED_WHITE; if valid_frame { FRAME_BYTES } else { 0 }];
+        let mut hardware = board.clone();
+        let mut panel = t133a01::Panel::default();
+        let result = core::cell::Cell::new(None);
+        let mut executor = Executor::new();
+        executor.spawn(async {
+            result.set(Some(
+                panel_update(&system, &mut panel, &mut hardware, &frame).await,
+            ));
+            core::future::pending::<()>().await;
+        });
+        executor.advance(1);
+        if cancel {
+            system.stop_panel.signal(());
+        }
+        assert!(executor.until(DISPLAY_TIMEOUT_MS + 1, || result.get().is_some()));
+        assert_eq!(result.get(), Some(Err(expected)));
+        assert!(!board.0.borrow().panel_on);
+        assert!(board.0.borrow().selected.is_none());
+    }
+    embassy_time::MockDriver::get().reset();
     boot!(board, system, frame, executor, |board: &Board| {
         board.0.borrow_mut().busy_forever = true;
     });

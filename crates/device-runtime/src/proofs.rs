@@ -2,6 +2,23 @@ use crate::{measurements::charging_status, policy::*};
 use device_core::{app::*, settings::*, telemetry::*};
 
 #[kani::proof]
+#[kani::unwind(2)]
+fn panel_timeout_classification_preserves_the_error_kind() {
+    let index: usize = kani::any();
+    kani::assume(index < 4);
+    let error = [
+        t133a01::Error::Transport,
+        t133a01::Error::BusyTimeout,
+        t133a01::Error::InvalidFrame,
+        t133a01::Error::NotInitialized,
+    ][index];
+    let expected = [Fault::Bus, Fault::PanelTimeout, Fault::Bus, Fault::Bus][index];
+    assert_eq!(panel_fault(error), expected);
+    kani::cover!(expected == Fault::PanelTimeout);
+    kani::cover!(expected == Fault::Bus);
+}
+
+#[kani::proof]
 #[kani::unwind(6)]
 fn sleep_permission_requires_current_ticket_and_every_quiet_boundary() {
     let mut app = App::default();
@@ -104,7 +121,7 @@ fn erased_settings_are_defaults_and_non_erased_corruption_is_reported() {
         if byte == 0xff {
             None
         } else {
-            Some(Fault::Storage)
+            Some(Fault::SettingsStorage)
         }
     );
 }
@@ -124,16 +141,19 @@ fn boot_slot_failures<const FAILURES: u8>() {
                 Settings {
                     refresh_seconds: 86400,
                     rotation: 2,
+                    ..Settings::default()
                 }
             } else if slot == 0 {
                 Settings {
                     refresh_seconds: 600,
                     rotation: 1,
+                    ..Settings::default()
                 }
             } else {
                 Settings {
                     refresh_seconds: 1800,
                     rotation: 3,
+                    ..Settings::default()
                 }
             };
             *bytes = encode(value, if failed { 500 } else { slot as u32 });
@@ -166,10 +186,12 @@ fn boot_slot_failures<const FAILURES: u8>() {
         0 | 1 => Settings {
             refresh_seconds: 1800,
             rotation: 3,
+            ..Settings::default()
         },
         2 => Settings {
             refresh_seconds: 600,
             rotation: 1,
+            ..Settings::default()
         },
         _ => Settings::default(),
     };
@@ -180,7 +202,7 @@ fn boot_slot_failures<const FAILURES: u8>() {
             if FAILURES == 0 {
                 None
             } else {
-                Some(Fault::Storage)
+                Some(Fault::SettingsStorage)
             }
         )
     );

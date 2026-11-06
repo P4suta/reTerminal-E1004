@@ -6,6 +6,7 @@ pub enum Command<'a> {
     Sleep,
     SetRtc(&'a str),
     SetInterval(u32),
+    Resume(device_core::settings::ResumePolicy),
     WifiScan,
     WifiConnect { ssid: &'a str, password: &'a str },
     WifiDisconnect,
@@ -23,6 +24,15 @@ pub fn parse(line: &str) -> Result<Command<'_>, ParseError> {
     if line.len() > MAX_LINE_BYTES {
         return Err(ParseError::TooLong);
     }
+    let line = line.trim_start().trim_end_matches(['\r', '\n']);
+    if let Some(value) = line.strip_prefix("wifi connect ") {
+        let (ssid, password) = value.split_once('\t').ok_or(ParseError::Invalid)?;
+        return if wifi_credential_lengths_valid(ssid.len(), password.len()) {
+            Ok(Command::WifiConnect { ssid, password })
+        } else {
+            Err(ParseError::Invalid)
+        };
+    }
     let line = line.trim();
     match line {
         "status" => Ok(Command::Status),
@@ -34,6 +44,11 @@ pub fn parse(line: &str) -> Result<Command<'_>, ParseError> {
         "ble on" => Ok(Command::Ble(true)),
         "ble off" => Ok(Command::Ble(false)),
         _ => {
+            if let Some(value) = line.strip_prefix("resume ") {
+                return resume_policy(value)
+                    .map(Command::Resume)
+                    .ok_or(ParseError::Invalid);
+            }
             if let Some(value) = line.strip_prefix("interval ") {
                 let value = value.parse::<u32>().map_err(|_| ParseError::Invalid)?;
                 return if (MIN_REFRESH_SECONDS..=MAX_REFRESH_SECONDS).contains(&value) {
@@ -49,18 +64,21 @@ pub fn parse(line: &str) -> Result<Command<'_>, ParseError> {
                     Err(ParseError::Invalid)
                 };
             }
-            if let Some(value) = line.strip_prefix("wifi connect ") {
-                let (ssid, password) = value.split_once('\t').ok_or(ParseError::Invalid)?;
-                if ssid.is_empty()
-                    || ssid.len() > MAX_SSID_BYTES
-                    || password.len() > MAX_PASSWORD_BYTES
-                {
-                    return Err(ParseError::Invalid);
-                }
-                return Ok(Command::WifiConnect { ssid, password });
-            }
             Err(ParseError::Unknown)
         }
+    }
+}
+
+pub(crate) const fn wifi_credential_lengths_valid(ssid: usize, password: usize) -> bool {
+    ssid > 0 && ssid <= MAX_SSID_BYTES && password <= MAX_PASSWORD_BYTES
+}
+
+pub(crate) fn resume_policy(value: &str) -> Option<device_core::settings::ResumePolicy> {
+    use device_core::settings::ResumePolicy;
+    match value {
+        "last" => Some(ResumePolicy::Last),
+        "status" => Some(ResumePolicy::Status),
+        _ => None,
     }
 }
 
@@ -88,7 +106,7 @@ impl Default for LineInput {
     }
 }
 impl LineInput {
-    #[cfg(kani)]
+    #[cfg(any(test, kani))]
     pub(crate) fn proof_state(length: usize, discarding: bool, complete: bool) -> Self {
         Self {
             bytes: [0; MAX_LINE_BYTES],
@@ -97,7 +115,11 @@ impl LineInput {
             complete,
         }
     }
-    #[cfg(kani)]
+    #[cfg(any(test, kani))]
+    pub(crate) fn proof_components(&self) -> (usize, bool, bool) {
+        (self.length, self.discarding, self.complete)
+    }
+    #[cfg(any(test, kani))]
     pub(crate) fn invariant(&self) -> bool {
         self.length <= self.bytes.len()
             && (!self.discarding || self.length == 0)
@@ -141,3 +163,37 @@ use device_core::settings::{MAX_REFRESH_SECONDS, MIN_REFRESH_SECONDS};
 const MAX_LINE_BYTES: usize = 256;
 const MAX_SSID_BYTES: usize = 32;
 const MAX_PASSWORD_BYTES: usize = 63;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proof_state_and_invariant_preserve_the_declared_input_domain() {
+        for length in (0..=MAX_LINE_BYTES + 1).chain(core::iter::once(usize::MAX)) {
+            for discarding in [false, true] {
+                for complete in [false, true] {
+                    let state = LineInput::proof_state(length, discarding, complete);
+                    assert_eq!(
+                        (state.length, state.discarding, state.complete),
+                        (length, discarding, complete)
+                    );
+                    assert_eq!(state.proof_components(), (length, discarding, complete));
+                    let valid = match (length, discarding, complete) {
+                        (0, _, false) => true,
+                        (length, false, _) => (1..=MAX_LINE_BYTES).contains(&length),
+                        _ => false,
+                    };
+                    assert_eq!(state.invariant(), valid);
+                    if valid {
+                        for byte in 0..=u8::MAX {
+                            let mut input = LineInput::proof_state(length, discarding, complete);
+                            input.push(byte);
+                            assert!(input.invariant());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

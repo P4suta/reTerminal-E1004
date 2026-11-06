@@ -111,6 +111,13 @@ impl Preview {
     /// Apply an adapter event.
     /// Use `command` or `apply_measurements` to record preview inputs.
     pub fn event(&mut self, event: AppEvent) {
+        let mut next_event = Some(event);
+        while let Some(event) = next_event.take() {
+            next_event = self.event_step(event);
+        }
+    }
+
+    fn event_step(&mut self, event: AppEvent) -> Option<AppEvent> {
         if let AppEvent::DisplayFinished { id, result } = event {
             if matches!(self.app.refresh, RefreshState::Updating { id: active, .. } if active == id)
             {
@@ -119,16 +126,22 @@ impl Preview {
         }
         let transition = self.app.transition(event);
         self.app = transition.state;
+        let mut next_event = None;
         for action in transition.actions {
             match action {
                 Action::Display { id } => self.presentation.start(id, self.app),
                 Action::StopPanel => self.presentation.cancel(),
-                Action::None | Action::Measure | Action::Sleep { .. } | Action::Log(_) => {}
+                Action::Measure => next_event = Some(AppEvent::Telemetry(self.app.telemetry)),
+                Action::None | Action::Sleep { .. } | Action::Log(_) => {}
             }
         }
-        if self.immediate {
-            self.complete_active();
+        if self.immediate && next_event.is_none() {
+            next_event = self
+                .presentation
+                .active_id()
+                .map(|id| AppEvent::DisplayFinished { id, result: Ok(()) });
         }
+        next_event
     }
     pub fn command(&mut self, command: &str) -> Result<(), &'static str> {
         if !self.can_record(command.len()) {
@@ -193,8 +206,8 @@ impl Preview {
                     _ => return Err("invalid rotation"),
                 };
                 self.event(AppEvent::Configure(device_core::settings::Settings {
-                    refresh_seconds: self.app.refresh_seconds,
                     rotation: rotation as u8,
+                    ..self.app.settings()
                 }));
             }
             ("sd", value) => self.event(AppEvent::StorageChanged(match value {
@@ -383,6 +396,7 @@ fn fault_name(fault: Fault) -> &'static str {
         Fault::Bus => "bus error",
         Fault::PanelTimeout => "panel timeout",
         Fault::Storage => "storage error",
+        Fault::SettingsStorage => "settings flash error",
         Fault::InvalidRtc => "invalid RTC",
         Fault::InvalidInput => "invalid input",
     }

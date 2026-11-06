@@ -2,6 +2,19 @@ use device_core::{app::*, settings::Settings};
 use device_runtime::policy::*;
 
 #[test]
+fn every_panel_error_retains_its_fault_category() {
+    use device_core::telemetry::Fault;
+    for (error, expected) in [
+        (t133a01::Error::Transport, Fault::Bus),
+        (t133a01::Error::BusyTimeout, Fault::PanelTimeout),
+        (t133a01::Error::InvalidFrame, Fault::Bus),
+        (t133a01::Error::NotInitialized, Fault::Bus),
+    ] {
+        assert_eq!(panel_fault(error), expected);
+    }
+}
+
+#[test]
 fn a_sleep_ticket_never_allows_an_active_radio_or_a_stale_request() {
     let transition = App::default().transition(AppEvent::RequestSleep);
     assert!(transition
@@ -92,11 +105,12 @@ fn settings_boot_distinguishes_erased_corrupt_and_valid_generations() {
     );
     assert_eq!(
         loaded_settings(&[0; SLOT_BYTES], &erased),
-        (Settings::default(), Some(Fault::Storage))
+        (Settings::default(), Some(Fault::SettingsStorage))
     );
     let expected = Settings {
         refresh_seconds: 1800,
         rotation: 3,
+        ..Settings::default()
     };
     let valid = encode(expected, 4);
     assert_eq!(loaded_settings(&valid, &erased), (expected, None));
@@ -106,7 +120,7 @@ fn settings_boot_distinguishes_erased_corrupt_and_valid_generations() {
         corrupt[index] = 0;
         assert_eq!(
             loaded_settings(&corrupt, &erased),
-            (Settings::default(), Some(Fault::Storage))
+            (Settings::default(), Some(Fault::SettingsStorage))
         );
     }
 }

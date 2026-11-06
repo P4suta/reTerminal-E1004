@@ -8,6 +8,10 @@ fuzz_runs = 10000
 fuzz_seed = 104
 
 core_harnesses = [
+  "acknowledged_screen_policy_preserves_navigation_and_deadline",
+  "previous_settings_format_preserves_values_and_rejects_reserved_payload",
+  "measurement_barrier_cannot_emit_display_or_sleep",
+  "settings_faults_preserve_the_sd_status",
   "panel_failure_revokes_sleep_and_stale_failures_cannot_change_state",
   "presentation_accepts_only_the_active_success_and_cancel_revokes_completion",
   "decimal_parser_matches_signed_fixed_point_without_rounding",
@@ -24,6 +28,8 @@ core_harnesses = [
 ]
 
 bsp_harnesses = [
+  "wifi_credential_lengths_match_the_byte_limits",
+  "resume_policy_decoding_accepts_only_exact_ascii_values",
   "flash_addresses_are_bounded_and_sectors_are_disjoint",
   "console_step_preserves_buffer_and_discard_invariants",
   "stable_button_never_repeats_a_press",
