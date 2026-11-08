@@ -718,7 +718,7 @@ async fn viewport_failures(
             if(r.top<0||r.bottom>innerHeight+1||r.left<0||r.right>innerWidth+1)failures.push(selector+': outside viewport');
             for(let parent=control.parentElement;parent;parent=parent.parentElement){{
                 const style=getComputedStyle(parent),p=parent.getBoundingClientRect();
-                if(/auto|scroll|hidden|clip/.test(style.overflowY)&&(r.top<p.top-1||r.bottom>p.bottom+1))failures.push(selector+': clipped by '+(parent.id||parent.tagName));
+                if(/auto|scroll|hidden|clip/.test(style.overflowY)&&(r.top<p.top-1||r.bottom>p.bottom+1))failures.push(selector+': clipped by '+(parent.id||parent.tagName)+' (target '+r.top+'..'+r.bottom+', parent '+p.top+'..'+p.bottom+')');
             }}
         }}
         return failures;
@@ -728,6 +728,9 @@ async fn viewport_failures(
 async fn assert_viewport(page: &Page, selectors: &[&str]) -> BrowserResult {
     let failures = viewport_failures(page, selectors).await?;
     if !failures.is_empty() {
+        if let Err(error) = save_screenshot(page, "viewport-failure.png").await {
+            eprintln!("Viewport failure screenshot: {error}");
+        }
         let size: String = page
             .evaluate("innerWidth+'x'+innerHeight")
             .await?
@@ -735,6 +738,11 @@ async fn assert_viewport(page: &Page, selectors: &[&str]) -> BrowserResult {
         return Err(format!("Workspace does not fit the {size} viewport: {failures:?}").into());
     }
     Ok(())
+}
+
+async fn load_layout_image(page: &Page) -> BrowserResult {
+    page.evaluate("(async()=>{const c=document.createElement('canvas');c.width=16;c.height=16;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,16,16);x.fillStyle='black';x.fillRect(0,0,8,8);x.fillRect(8,8,8,8);const blob=await new Promise(resolve=>c.toBlob(resolve));const files=new DataTransfer();files.items.add(new File([blob],'checkerboard.png',{type:'image/png'}));document.querySelector('#image-file').files=files.files;document.querySelector('#image-file').dispatchEvent(new Event('change'));})()").await?;
+    wait_js(page,"!document.querySelector('#export-image').disabled && document.querySelector('#media-status').textContent==='Preview updated.'").await
 }
 
 async fn viewport_layout_checks(browser: &Browser, preview_url: &str) -> BrowserResult {
@@ -898,8 +906,7 @@ async fn viewport_layout_checks(browser: &Browser, preview_url: &str) -> Browser
             .await?;
     }
     click(&page, "#tab-images").await?;
-    page.evaluate("(async()=>{const c=document.createElement('canvas');c.width=16;c.height=16;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,16,16);x.fillStyle='black';x.fillRect(0,0,8,8);x.fillRect(8,8,8,8);const blob=await new Promise(resolve=>c.toBlob(resolve));const files=new DataTransfer();files.items.add(new File([blob],'checkerboard.png',{type:'image/png'}));document.querySelector('#image-file').files=files.files;document.querySelector('#image-file').dispatchEvent(new Event('change'));})()").await?;
-    wait_js(&page,"!document.querySelector('#export-image').disabled && document.querySelector('#media-status').textContent==='Preview updated.'").await?;
+    load_layout_image(&page).await?;
     for (width, height, name) in [(1280, 720, "desktop"), (390, 844, "mobile")] {
         page.execute(SetDeviceMetricsOverrideParams::new(
             width, height, 1.0, false,
@@ -913,6 +920,7 @@ async fn viewport_layout_checks(browser: &Browser, preview_url: &str) -> Browser
                 "#send-image",
                 "#export-image",
                 "#display",
+                "#media-status",
                 "#image-slot",
                 "#rotation",
                 "#image-fit",
@@ -1152,11 +1160,60 @@ async fn task_list_checks(browser: &Browser, preview_url: &str) -> BrowserResult
         "document.querySelector('#state')?.textContent.length>0",
     )
     .await?;
+    unsupported
+        .execute(SetDeviceMetricsOverrideParams::new(390, 844, 1.0, false))
+        .await?;
     click(&unsupported, "#tab-daily").await?;
     assert_js(&unsupported, "document.querySelector('#send-settings').disabled && document.querySelector('#daily-send-help').textContent.includes('Chrome or Edge')").await?;
     click(&unsupported, "#tab-device").await?;
     assert_js(&unsupported, "document.querySelector('#device-connect').disabled && document.querySelector('#connection-help').textContent.includes('Chrome or Edge')").await?;
     assert_icons(&unsupported).await?;
+    click(&unsupported, "#tab-images").await?;
+    load_layout_image(&unsupported).await?;
+    assert_js(&unsupported, "document.querySelector('#send-image').disabled && document.querySelector('#image-send-help').textContent.includes('Chrome or Edge')").await?;
+    assert_viewport(
+        &unsupported,
+        &[
+            "#image-file",
+            "#send-image",
+            "#export-image",
+            "#display",
+            "#media-status",
+        ],
+    )
+    .await?;
+    for font in ["Arial", "Verdana"] {
+        unsupported
+            .evaluate(format!(
+                "document.documentElement.style.fontFamily={}",
+                serde_json::to_string(font)?
+            ))
+            .await?;
+        assert_viewport(
+            &unsupported,
+            &[
+                "#image-file",
+                "#send-image",
+                "#export-image",
+                "#display",
+                "#media-status",
+            ],
+        )
+        .await?;
+    }
+    save_screenshot(&unsupported, "viewport-images-wide-font-mobile.png").await?;
+    unsupported
+        .evaluate("document.documentElement.style.fontFamily='monospace'")
+        .await?;
+    for selector in ["#display", "#media-status"] {
+        unsupported
+            .evaluate(format!(
+                "document.querySelector({}).scrollIntoView({{block:'nearest'}})",
+                serde_json::to_string(selector)?
+            ))
+            .await?;
+        assert_viewport(&unsupported, &[selector]).await?;
+    }
     unsupported.close().await?;
     println!(
         "Direct task editing, deletion recovery, calendar dates, and named monochrome icons passed"
