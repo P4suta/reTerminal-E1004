@@ -68,7 +68,7 @@ A settings failure appears as `SettingsStorage` in diagnostics and console outpu
 
 Run `mise x -- just web` to open the browser preview at the printed address.
 Open the Daily workspace to edit the checklist and note or preview the calendar.
-Choose To-do list, Note, or Calendar to show its editor.
+Choose Tasks, Note, or Calendar to show its editor.
 Enter a task, then press Enter.
 Each task has a checkbox, an Edit pencil, and a Delete trash icon.
 Use Space on a checkbox to complete or reopen its task.
@@ -86,6 +86,13 @@ Previous month, Next month, and Today navigate the calendar.
 Sending a calendar also sets the display clock to the captured local date and time and selects the shown month.
 Invalid input preserves the current state, displayed image, and recording.
 The preview runs locally and sends no daily content to a service.
+
+Normal desktop and mobile windows keep the task list and send action in one view.
+On narrow screens, choose Preview to inspect the display content, then choose an editor or Preview again to return.
+Preview shows the last applied edits and preserves unfinished drafts.
+Long text and expanded settings can scroll within their panel.
+The page uses a scrollable layout for short windows and enlarged text.
+Open Device and About this app for notices and licenses.
 
 Actions and fields use monochrome icons with text labels or names for assistive technology.
 Task editing and deletion use named icon buttons beside their task.

@@ -703,6 +703,276 @@ async fn icon_contract_checks(page: &Page) -> BrowserResult {
     assert_icons(page).await
 }
 
+async fn viewport_failures(
+    page: &Page,
+    selectors: &[&str],
+) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+    Ok(page.evaluate(format!(r#"(() => {{
+        const failures=[];
+        if(document.documentElement.scrollHeight>innerHeight+1||document.documentElement.scrollWidth>innerWidth+1)failures.push('page overflow');
+        for(const selector of {}){{
+            const control=document.querySelector(selector);
+            if(!control?.getClientRects().length){{failures.push(selector+': hidden');continue;}}
+            const r=control.getBoundingClientRect();
+            if(r.width<=0||r.height<=0)failures.push(selector+': empty target');
+            if(r.top<0||r.bottom>innerHeight+1||r.left<0||r.right>innerWidth+1)failures.push(selector+': outside viewport');
+            for(let parent=control.parentElement;parent;parent=parent.parentElement){{
+                const style=getComputedStyle(parent),p=parent.getBoundingClientRect();
+                if(/auto|scroll|hidden|clip/.test(style.overflowY)&&(r.top<p.top-1||r.bottom>p.bottom+1))failures.push(selector+': clipped by '+(parent.id||parent.tagName));
+            }}
+        }}
+        return failures;
+    }})()"#,serde_json::to_string(selectors)?)).await?.into_value()?)
+}
+
+async fn assert_viewport(page: &Page, selectors: &[&str]) -> BrowserResult {
+    let failures = viewport_failures(page, selectors).await?;
+    if !failures.is_empty() {
+        let size: String = page
+            .evaluate("innerWidth+'x'+innerHeight")
+            .await?
+            .into_value()?;
+        return Err(format!("Workspace does not fit the {size} viewport: {failures:?}").into());
+    }
+    Ok(())
+}
+
+async fn viewport_layout_checks(browser: &Browser, preview_url: &str) -> BrowserResult {
+    let page = browser.new_page(preview_url).await?;
+    page.execute(SetDeviceMetricsOverrideParams::new(1280, 720, 1.0, false))
+        .await?;
+    wait_js(
+        &page,
+        "document.querySelector('#state')?.textContent.length>0",
+    )
+    .await?;
+    click(&page, "#tab-daily").await?;
+    page.evaluate("['Buy groceries','Return library books','Water the plants','Book a dentist appointment','Plan the weekend','Send the project update'].forEach(text=>{document.querySelector('#task-text').value=text;document.querySelector('#task-editor').requestSubmit();});document.querySelector('#task-done-2').click();document.querySelector('#task-done-4').click();document.activeElement.blur();window.scrollTo(0,0)").await?;
+    for (width, height, name) in [(1280, 720, "desktop"), (390, 844, "mobile")] {
+        page.execute(SetDeviceMetricsOverrideParams::new(
+            width, height, 1.0, false,
+        ))
+        .await?;
+        save_screenshot(&page, &format!("viewport-daily-{name}.png")).await?;
+    }
+    for (width, height) in [(1280, 720), (1024, 768), (390, 844)] {
+        page.execute(SetDeviceMetricsOverrideParams::new(
+            width, height, 1.0, false,
+        ))
+        .await?;
+        assert_viewport(
+            &page,
+            &[
+                "#daily-checklist",
+                "#task-row-1",
+                "#task-row-2",
+                "#task-row-3",
+                "#task-row-4",
+                "#task-row-5",
+                "#task-row-6",
+                "#send-settings",
+            ],
+        )
+        .await?;
+        assert_js(&page,"document.querySelector('#task-list').scrollHeight<=document.querySelector('#task-list').clientHeight+1").await?;
+        assert_icons(&page).await?;
+    }
+    click(&page, "#task-delete-6").await?;
+    for (width, height) in [(1280, 720), (390, 844)] {
+        page.execute(SetDeviceMetricsOverrideParams::new(
+            width, height, 1.0, false,
+        ))
+        .await?;
+        assert_viewport(
+            &page,
+            &[
+                "#task-text",
+                "#task-save",
+                "#task-undo",
+                "#task-clear-completed",
+                "#task-row-1",
+                "#task-row-5",
+                "#send-settings",
+            ],
+        )
+        .await?;
+    }
+    click(&page, "#task-undo").await?;
+    page.evaluate("document.querySelector('#task-row-6').style.transform='translateY(100vh)'")
+        .await?;
+    if viewport_failures(&page, &["#task-row-6"]).await?.is_empty() {
+        return Err("viewport gate accepted an offscreen task".into());
+    }
+    page.evaluate("document.querySelector('#task-row-6').style.transform='';document.querySelector('#task-list').style.maxHeight='1px';document.querySelector('#task-list').style.overflow='hidden'").await?;
+    if viewport_failures(&page, &["#task-row-6"]).await?.is_empty() {
+        return Err("viewport gate accepted clipped task rows".into());
+    }
+    page.evaluate("document.querySelector('#task-list').style.maxHeight='';document.querySelector('#task-list').style.overflow=''").await?;
+    click(&page, "#task-edit-1").await?;
+    page.evaluate("document.querySelector('#task-edit-text-1').value='Keep this unfinished edit';window.previewFrame=document.querySelector('#display').toDataURL()").await?;
+    click(&page, "#daily-preview-toggle").await?;
+    assert_js(&page,"document.querySelector('#daily-preview-toggle').getAttribute('aria-expanded')==='true' && document.querySelector('#checklist-content').hidden && document.querySelector('#daily-display').toDataURL()===window.previewFrame").await?;
+    assert_viewport(
+        &page,
+        &["#daily-preview-toggle", "#daily-display", "#send-settings"],
+    )
+    .await?;
+    save_screenshot(&page, "viewport-preview-mobile.png").await?;
+    page.evaluate("document.querySelector('#daily-display').style.height='0px'")
+        .await?;
+    if viewport_failures(&page, &["#daily-display"])
+        .await?
+        .is_empty()
+    {
+        return Err("viewport gate accepted an empty preview".into());
+    }
+    page.evaluate("document.querySelector('#daily-display').style.height=''")
+        .await?;
+    click(&page, "#daily-checklist").await?;
+    assert_js(&page, "document.querySelector('#daily-preview-toggle').getAttribute('aria-expanded')==='false' && !document.querySelector('#checklist-content').hidden && document.querySelector('#task-edit-text-1').value==='Keep this unfinished edit'").await?;
+    click(&page, "#daily-preview-toggle").await?;
+    show_control(&page, "#task-edit-text-1").await?;
+    assert_js(&page,"document.querySelector('#task-edit-text-1').getClientRects().length>0 && document.querySelector('#task-edit-text-1').value==='Keep this unfinished edit'").await?;
+    click(&page, "#daily-preview-toggle").await?;
+    page.find_element("#daily-preview-toggle")
+        .await?
+        .focus()
+        .await?
+        .press_key(" ")
+        .await?;
+    assert_js(&page,"document.querySelector('#task-edit-text-1').value==='Keep this unfinished edit' && !document.querySelector('#task-form-1').hidden").await?;
+    click(&page, "#daily-preview-toggle").await?;
+    page.execute(SetDeviceMetricsOverrideParams::new(1280, 720, 1.0, false))
+        .await?;
+    wait_js(
+        &page,
+        "document.querySelector('#daily-preview-toggle').getAttribute('aria-expanded')==='false'",
+    )
+    .await?;
+    assert_js(&page, "document.activeElement.getClientRects().length>0").await?;
+    assert_js(&page,"!document.querySelector('#checklist-content').hidden && document.querySelector('#task-edit-text-1').value==='Keep this unfinished edit'").await?;
+    click(&page, "#task-cancel-1").await?;
+    click(&page, "#daily-notes").await?;
+    page.evaluate("document.querySelector('#note-text').value='Plans for the week';document.querySelector('#note-editor').requestSubmit()").await?;
+    for (width, height, name) in [(1280, 720, "desktop"), (390, 844, "mobile")] {
+        page.execute(SetDeviceMetricsOverrideParams::new(
+            width, height, 1.0, false,
+        ))
+        .await?;
+        assert_viewport(
+            &page,
+            &[
+                "#note-text",
+                "#note-save",
+                "#note-discard",
+                "#note-clear",
+                "#send-settings",
+            ],
+        )
+        .await?;
+        save_screenshot(&page, &format!("viewport-note-{name}.png")).await?;
+        click(&page, "#daily-calendar").await?;
+        assert_viewport(
+            &page,
+            &[
+                "#calendar-previous",
+                "#calendar-next",
+                "#calendar-today",
+                "#calendar-grid",
+                "#send-settings",
+            ],
+        )
+        .await?;
+        save_screenshot(&page, &format!("viewport-calendar-{name}.png")).await?;
+        click(&page, "#daily-notes").await?;
+    }
+    for width in [320, 390, 768, 1280] {
+        page.execute(SetDeviceMetricsOverrideParams::new(width, 844, 1.0, false))
+            .await?;
+        page.evaluate("document.documentElement.style.fontSize='200%';document.querySelector('#note-text').value='Large readable note.'").await?;
+        click(&page, "#note-save").await?;
+        assert_js(&page,"document.querySelector('#state').textContent.includes('Note: Large readable note.') && document.documentElement.scrollWidth<=innerWidth").await?;
+        page.find_element("#note-text").await?.focus().await?;
+        assert_js(&page,"document.activeElement.id==='note-text' && document.querySelector('#note-text').getBoundingClientRect().top>=0 && document.querySelector('#note-text').getBoundingClientRect().bottom<=innerHeight").await?;
+        page.evaluate("document.documentElement.style.fontSize=''")
+            .await?;
+    }
+    click(&page, "#tab-images").await?;
+    page.evaluate("(async()=>{const c=document.createElement('canvas');c.width=16;c.height=16;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,16,16);x.fillStyle='black';x.fillRect(0,0,8,8);x.fillRect(8,8,8,8);const blob=await new Promise(resolve=>c.toBlob(resolve));const files=new DataTransfer();files.items.add(new File([blob],'checkerboard.png',{type:'image/png'}));document.querySelector('#image-file').files=files.files;document.querySelector('#image-file').dispatchEvent(new Event('change'));})()").await?;
+    wait_js(&page,"!document.querySelector('#export-image').disabled && document.querySelector('#media-status').textContent==='Preview updated.'").await?;
+    for (width, height, name) in [(1280, 720, "desktop"), (390, 844, "mobile")] {
+        page.execute(SetDeviceMetricsOverrideParams::new(
+            width, height, 1.0, false,
+        ))
+        .await?;
+        save_screenshot(&page, &format!("viewport-images-{name}.png")).await?;
+        assert_viewport(
+            &page,
+            &[
+                "#image-file",
+                "#send-image",
+                "#export-image",
+                "#display",
+                "#image-slot",
+                "#rotation",
+                "#image-fit",
+                "#image-palette",
+                "#image-dither",
+            ],
+        )
+        .await?;
+        assert_icons(&page).await?;
+        click(&page, "#tab-device").await?;
+        assert_viewport(
+            &page,
+            &[
+                "#device-connect",
+                "#device-disconnect",
+                "#device-status",
+                "#device-refresh",
+                "#device-sleep",
+            ],
+        )
+        .await?;
+        save_screenshot(&page, &format!("viewport-device-{name}.png")).await?;
+        click(&page, "#tab-images").await?;
+    }
+    click(&page, "#tab-device").await?;
+    click(&page, "#app-info > summary").await?;
+    page.find_element("#app-info a").await?.focus().await?;
+    assert_viewport(&page, &["#app-info a"]).await?;
+    assert_js(&page, "document.querySelectorAll('#app-info a').length===3").await?;
+    click(&page, "#tab-images").await?;
+    show_control(&page, "#image-brightness").await?;
+    page.find_element("#image-brightness")
+        .await?
+        .focus()
+        .await?;
+    assert_viewport(&page, &["#image-brightness"]).await?;
+    click(&page, "#tab-daily").await?;
+    click(&page, "#daily-checklist").await?;
+    for (width, height) in [(320, 568), (844, 390), (1280, 540)] {
+        page.execute(SetDeviceMetricsOverrideParams::new(
+            width, height, 1.0, false,
+        ))
+        .await?;
+        click(&page, "#task-edit-6").await?;
+        page.find_element("#task-edit-text-6")
+            .await?
+            .press_key("Escape")
+            .await?;
+        for selector in ["#task-edit-6", "#send-settings"] {
+            page.find_element(selector).await?.focus().await?;
+            assert_js(&page,&format!("(()=>{{const e=document.querySelector({});const r=e.getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth&&r.top>=0&&r.bottom<=innerHeight&&e.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));}})()",serde_json::to_string(selector)?)).await?;
+        }
+    }
+    page.close().await?;
+    println!(
+        "Viewport layout, complete task rows, preview switching, and unclipped controls passed"
+    );
+    Ok(())
+}
+
 async fn task_list_checks(browser: &Browser, preview_url: &str) -> BrowserResult {
     let page = browser.new_page(preview_url).await?;
     page.execute(SetDeviceMetricsOverrideParams::new(1280, 900, 1.0, false))
@@ -1147,7 +1417,7 @@ async fn show_control(page: &Page, selector: &str) -> BrowserResult {
     if !daily.is_empty()
         && page
             .evaluate(format!(
-                "document.querySelector('#daily-{daily}').getAttribute('aria-pressed')!=='true'"
+                "document.querySelector('#daily-{daily}').getAttribute('aria-pressed')!=='true'||document.querySelector('#daily-preview-toggle').getAttribute('aria-expanded')==='true'"
             ))
             .await?
             .value()
@@ -1216,6 +1486,7 @@ async fn check_async() -> BrowserResult {
 }
 
 async fn exercise(browser: &Browser, preview_url: &str) -> BrowserResult {
+    viewport_layout_checks(browser, preview_url).await?;
     task_list_checks(browser, preview_url).await?;
     workspace_checks(browser, preview_url).await?;
     live_image_checks(browser, preview_url).await?;

@@ -95,7 +95,10 @@ Browser checks request an OS-assigned port and read the server's announced addre
 The browser imports generated `wasm-bindgen` glue and runs event handling in Rust.
 Normal preview operation needs no external script, image, font, or network API.
 The browser opens Images, Daily, and Device as separate task workspaces.
-Daily shows one editor for To-do list, Note, or Calendar and places editing before the preview.
+Daily shows one editor for Tasks, Note, or Calendar and places editing before the preview.
+Narrow daily workspaces switch the editor and a second canvas drawn from the same preview state.
+Keep view changes independent of content edits and preserve focus when a resized window hides the preview switch.
+Use `min-height` in font-relative units so enlarged text never collapses an editing region.
 Task rows keep their DOM identity through completion and rendering so keyboard focus and other inline drafts survive updates.
 Every action and field has a named monochrome icon or native state indicator.
 The optional `?tools` address reveals development controls.

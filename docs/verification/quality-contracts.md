@@ -78,6 +78,30 @@ The test now waits for the matching download identifier's completed event before
 Cancellation and an ended event stream fail the check.
 The [Chrome download progress contract](https://chromedevtools.github.io/devtools-protocol/tot/Browser/#event-downloadProgress) supplies the completion boundary.
 
+## Viewport layout
+
+Routine editing must keep the task rows and primary action inside the window.
+The earlier layout checks covered horizontal reflow but accepted task rows and sending below the viewport.
+The browser now requires all six ordinary tasks to fit at 1280 by 720, 1024 by 768, and 390 by 844.
+It also checks note, calendar, image, and connection controls at desktop and mobile sizes.
+The gate rejects offscreen rows, ancestor clipping, and empty preview targets.
+
+Compact navigation and task tools leave room for the content without reducing the 18 pixel action labels or 48 pixel standalone targets.
+On narrow screens, the Preview button switches daily editing and a canvas rendered from the same app state.
+Its expanded state and keyboard activation follow the [W3C disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+Selecting Tasks, Note, or Calendar also returns to editing, and widening the window restores the editor and visible keyboard focus.
+The tests preserve a draft across both return paths and compare the preview canvases.
+
+An initial fixed-height layout let enlarged navigation and delivery controls shrink the note region to zero height.
+The pointer event reached the panel instead of the Save note button.
+The `min-height` rules use font-relative units to keep an editing region readable when enlarged text exceeds the window.
+The browser saves a note with doubled text at four widths and checks focus visibility.
+Long content, expanded controls, and short windows keep scrolling under the [W3C reflow guidance](https://www.w3.org/WAI/WCAG22/Understanding/reflow.html) and [text resizing guidance](https://www.w3.org/WAI/WCAG22/Understanding/resize-text.html).
+Content remains reachable under [Focus Not Obscured](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum.html).
+
+Routine task results remain available through task rows and the existing status region under [W3C status-message guidance](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html).
+Notices and licenses remain in Device under About this app, using the native [HTML disclosure contract](https://html.spec.whatwg.org/multipage/interactive-elements.html#the-details-element).
+
 ## Color media and transport authority
 
 Image files validate their header, checksum, exact packed length, and all palette nibbles before admission.

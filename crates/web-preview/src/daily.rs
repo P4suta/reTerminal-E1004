@@ -29,11 +29,38 @@ pub fn screen(document: &web_sys::Document) -> Result<&'static str, JsValue> {
 }
 
 pub fn select(document: &web_sys::Document, screen: &str) -> Result<(), JsValue> {
+    element(document, "daily-preview-toggle")?.set_attribute("aria-expanded", "false")?;
+    workspace::visible(document, "daily-preview-content", false)?;
     for name in SCREENS {
         let selected = screen == name;
         element(document, &format!("daily-{name}"))?
             .set_attribute("aria-pressed", if selected { "true" } else { "false" })?;
         workspace::visible(document, &format!("{name}-content"), selected)?;
+    }
+    Ok(())
+}
+
+pub fn previewing(document: &web_sys::Document) -> Result<bool, JsValue> {
+    Ok(element(document, "daily-preview-toggle")?
+        .get_attribute("aria-expanded")
+        .as_deref()
+        == Some("true"))
+}
+
+pub fn resize(document: &web_sys::Document) -> Result<(), JsValue> {
+    let width = web_sys::window()
+        .ok_or_else(|| JsValue::from_str("Window unavailable."))?
+        .inner_width()?
+        .as_f64()
+        .ok_or_else(|| JsValue::from_str("Window width unavailable."))?;
+    if width > 800.0 && previewing(document)? {
+        let selected = screen(document)?;
+        let toggle = element(document, "daily-preview-toggle")?;
+        let focused = document.active_element().as_ref() == Some(&toggle);
+        select(document, selected)?;
+        if focused {
+            focus(document, &format!("daily-{selected}"))?;
+        }
     }
     Ok(())
 }
@@ -313,9 +340,24 @@ fn dispatch(
     let mut focus_target = None;
     let mut feedback = None;
     match action {
+        "preview" => {
+            let show = !previewing(document)?;
+            let selected = screen(document)?;
+            for name in SCREENS {
+                workspace::visible(
+                    document,
+                    &format!("{name}-content"),
+                    !show && selected == name,
+                )?;
+            }
+            workspace::visible(document, "daily-preview-content", show)?;
+            element(document, "daily-preview-toggle")?
+                .set_attribute("aria-expanded", if show { "true" } else { "false" })?;
+        }
         "checklist" | "notes" | "calendar" => {
             if screen(document)? == action
                 && device_core::app::ScreenId::parse(action) == Some(preview.inner.app().screen)
+                && !previewing(document)?
             {
                 return Ok(());
             }
@@ -546,6 +588,7 @@ pub fn mount(
         )?;
     }
     for (id, event, action) in [
+        ("daily-preview-toggle", "click", "preview"),
         ("task-editor", "submit", "add"),
         ("task-undo", "click", "undo"),
         ("task-clear-completed", "click", "clear-completed"),
@@ -558,5 +601,17 @@ pub fn mount(
     ] {
         listen(document, preview, id, event, action, 0)?;
     }
+    let resized = document.clone();
+    let handler = Closure::wrap(Box::new(move |_: web_sys::Event| {
+        if let Err(error) = resize(&resized) {
+            if let Ok(output) = element(&resized, "error") {
+                output.set_text_content(error.as_string().as_deref());
+            }
+        }
+    }) as Box<dyn FnMut(web_sys::Event)>);
+    web_sys::window()
+        .ok_or_else(|| JsValue::from_str("Window unavailable."))?
+        .add_event_listener_with_callback("resize", handler.as_ref().unchecked_ref())?;
+    HANDLERS.with(|handlers| handlers.borrow_mut().push(handler as EventHandler));
     icons::mount(document)
 }

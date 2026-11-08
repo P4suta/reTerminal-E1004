@@ -800,7 +800,7 @@ fn refresh_actions(
     } else if !available {
         "Wait for the display to finish."
     } else if !connected {
-        "Send to display opens the USB connection window."
+        "Choose your display when prompted."
     } else {
         ""
     };

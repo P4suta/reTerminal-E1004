@@ -30,8 +30,7 @@
           <p id="update-status" role="status" aria-atomic="true">Loading preview.</p>
         </div>
         <div id="image-source">
-          <label for="image-file" data-icon="upload">Choose image</label>
-          <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,.e1004-image,.epd" aria-describedby="image-file-help media-error">
+          <div class="image-upload-row"><label for="image-file" class="task-input-label" data-icon="upload"><span class="sr-only">Choose image</span></label><input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,.e1004-image,.epd" aria-describedby="image-file-help media-error"></div>
           <p id="image-file-help" class="hint">Photos and saved images, up to 20 MB.</p>
         </div>
         <div id="image-actions" class="buttons">
@@ -52,7 +51,7 @@
       </section>
       <div class="task-pane" id="task-pane">
         <section id="panel-images" role="tabpanel" aria-labelledby="tab-images" tabindex="0">
-          <h2>Images</h2>
+          <h2 class="sr-only">Images</h2>
           <div class="field-pair">
             <div><label for="image-slot" data-icon="image">Image</label><select id="image-slot"><option value="1">Image 1</option><option value="2">Image 2</option><option value="3">Image 3</option><option value="4">Image 4</option><option value="5">Image 5</option><option value="6">Image 6</option><option value="7">Image 7</option><option value="8">Image 8</option></select></div>
             <div><label for="rotation" data-icon="rotate">Orientation</label><select id="rotation"><option value="0">Portrait</option><option value="1">Landscape</option><option value="2">Upside down</option><option value="3">Landscape, reversed</option></select></div>
@@ -86,27 +85,32 @@
           </details>
         </section>
         <section id="panel-daily" role="tabpanel" aria-labelledby="tab-daily" tabindex="0" hidden>
-          <h2>Daily</h2>
+          <h2 class="sr-only">Daily</h2>
           <div class="content-switcher" role="group" aria-label="Daily content">
-            <button type="button" id="daily-checklist" data-icon="list" aria-pressed="true">To-do list</button>
+            <button type="button" id="daily-checklist" data-icon="list" aria-pressed="true">Tasks</button>
             <button type="button" id="daily-notes" data-icon="note" aria-pressed="false">Note</button>
             <button type="button" id="daily-calendar" data-icon="calendar" aria-pressed="false">Calendar</button>
+            <button type="button" id="daily-preview-toggle" data-icon="device" class="mobile-preview" aria-expanded="false" aria-controls="daily-preview-content">Preview</button>
           </div>
-          <p id="daily-feedback" role="status" aria-atomic="true"></p>
+          <p id="daily-feedback" class="sr-only" role="status" aria-atomic="true"></p>
           <section id="checklist-content" aria-labelledby="tasks-heading">
-            <div class="section-title"><h3 id="tasks-heading">Tasks</h3><p id="task-count" role="status" aria-atomic="true">0 of 0 completed</p></div>
-            <form id="task-editor" novalidate>
-              <label for="task-text" data-icon="plus">New task</label>
-              <div class="task-entry"><input id="task-text" type="text" maxlength="48" required autocomplete="off" placeholder="Add a task" aria-describedby="task-help task-text-error task-full"><button type="submit" id="task-save" data-icon="plus" class="primary">Add task</button></div>
-              <p class="hint" id="task-help">Up to 48 English letters, numbers, and punctuation marks.</p>
+            <h3 id="tasks-heading" class="sr-only">Tasks</h3>
+            <div class="task-heading">
+              <form id="task-editor" novalidate>
+              <div class="task-entry"><label for="task-text" class="task-input-label" data-icon="list"><span class="sr-only">New task</span></label><input id="task-text" type="text" maxlength="48" required autocomplete="off" placeholder="Add a task" aria-describedby="task-help task-text-error task-full"><button type="submit" id="task-save" data-icon="plus" class="primary icon-button" aria-label="Add task" title="Add task"><span class="sr-only">Add task</span></button></div>
+              <p class="hint" id="task-help">English text, up to 48 characters.</p>
               <p class="field-error" id="task-text-error" role="alert"></p>
-            </form>
-            <p id="task-full" class="hint" hidden>All six tasks are in use.
-            Delete a task or clear completed tasks to make room.</p>
+              </form>
+              <div class="task-toolbar">
+                <div class="task-summary"><p id="task-count" role="status" aria-atomic="true">0 of 0 completed</p><p id="task-full" class="hint" hidden>List full.
+                Delete a task first.</p></div>
+                <button type="button" id="task-clear-completed" data-icon="delete" disabled>Clear completed</button>
+                <button type="button" id="task-undo" class="icon-button" data-icon="undo" aria-label="Undo deletion" title="Undo deletion" aria-describedby="task-undo-help" hidden><span class="sr-only">Undo</span></button>
+              </div>
+            </div>
             <p id="task-empty">No tasks yet.
             Add your first task above.</p>
             <ul id="task-list" aria-label="Tasks"></ul>
-            <div class="buttons"><button type="button" id="task-clear-completed" data-icon="delete" disabled>Clear completed</button><button type="button" id="task-undo" data-icon="undo" aria-describedby="task-undo-help" hidden>Undo</button></div>
             <p id="task-undo-help" class="hint" hidden>Undo is unavailable because the task list changed.</p>
           </section>
           <section id="notes-content" aria-labelledby="note-heading" hidden>
@@ -119,16 +123,15 @@
             </form>
           </section>
           <section id="calendar-content" aria-labelledby="calendar-heading" hidden>
-            <h3 id="calendar-heading">Calendar</h3>
-            <p class="hint">Sending a calendar also sets the display to your computer's local date and time.</p>
-            <div class="calendar-navigation"><button type="button" id="calendar-previous" class="icon-button" data-icon="left" aria-label="Previous month" title="Previous month"><span class="sr-only">Previous month</span></button><p id="calendar-month" data-icon="calendar" role="status" aria-atomic="true"></p><button type="button" id="calendar-next" class="icon-button" data-icon="right" aria-label="Next month" title="Next month"><span class="sr-only">Next month</span></button></div>
+            <h3 id="calendar-heading" class="sr-only">Calendar</h3>
+            <p class="hint">Uses your computer's local date and time.</p>
+            <div class="calendar-navigation"><button type="button" id="calendar-previous" class="icon-button" data-icon="left" aria-label="Previous month" title="Previous month"><span class="sr-only">Previous month</span></button><p id="calendar-month" data-icon="calendar" role="status" aria-atomic="true"></p><button type="button" id="calendar-next" class="icon-button" data-icon="right" aria-label="Next month" title="Next month"><span class="sr-only">Next month</span></button><button type="button" id="calendar-today" data-icon="calendar">Today</button></div>
             <div class="calendar-grid" id="calendar-grid" tabindex="0" role="region" aria-labelledby="calendar-month">
               <table aria-labelledby="calendar-month"><thead><tr><th scope="col"><abbr title="Monday">Mon</abbr></th><th scope="col"><abbr title="Tuesday">Tue</abbr></th><th scope="col"><abbr title="Wednesday">Wed</abbr></th><th scope="col"><abbr title="Thursday">Thu</abbr></th><th scope="col"><abbr title="Friday">Fri</abbr></th><th scope="col"><abbr title="Saturday">Sat</abbr></th><th scope="col"><abbr title="Sunday">Sun</abbr></th></tr></thead><tbody id="calendar-days"></tbody></table>
             </div>
-            <div class="buttons"><button type="button" id="calendar-today" data-icon="calendar">Today</button></div>
           </section>
-          <div class="buttons"><button type="button" id="send-settings" data-icon="send" class="primary" aria-describedby="daily-send-help">Send to display</button></div>
-          <p id="daily-send-help" class="hint"></p>
+          <section id="daily-preview-content" aria-labelledby="daily-preview-heading" hidden><h3 id="daily-preview-heading" class="sr-only">Display preview</h3><div class="preview-stage"><canvas id="daily-display" width="1200" height="1600" role="img" aria-label="Daily display preview"></canvas></div></section>
+          <div class="daily-delivery"><div class="buttons"><button type="button" id="send-settings" data-icon="send" class="primary" aria-describedby="daily-send-help">Send to display</button></div><p id="daily-send-help" class="hint"></p></div>
           <p id="daily-send-status" role="status" aria-atomic="true"></p>
         </section>
         <section id="panel-device" role="tabpanel" aria-labelledby="tab-device" tabindex="0" hidden>
@@ -143,6 +146,7 @@
             <div class="buttons"><button type="button" id="device-image" data-icon="image" disabled>Show saved image</button><button type="button" id="device-import" data-icon="upload" disabled>Import from SD</button></div>
             <p class="hint">For SD import, save IMAGE1.EPD through IMAGE8.EPD to the card's main folder.</p>
           </details>
+          <details id="app-info"><summary data-icon="info">About this app</summary><footer><p><a href="./pkg/NOTICE.txt" data-icon="note">Notices</a> · <a href="./pkg/LICENSE-MIT.txt" data-icon="note">MIT license</a> · <a href="./pkg/LICENSE-APACHE.txt" data-icon="note">Apache license</a></p></footer></details>
         </section>
         <section id="panel-tools" role="tabpanel" aria-labelledby="tab-tools" tabindex="0" hidden>
           <h2>Development tools</h2>
@@ -180,7 +184,6 @@
       </div>
     </div>
   </main>
-  <footer><p><a href="./pkg/NOTICE.txt" data-icon="note">Notices</a> · <a href="./pkg/LICENSE-MIT.txt" data-icon="note">MIT license</a> · <a href="./pkg/LICENSE-APACHE.txt" data-icon="note">Apache license</a></p></footer>
   <script type="module">
     import init, { mount } from './pkg/web_preview.js';
     try {

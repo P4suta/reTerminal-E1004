@@ -10,6 +10,7 @@ Image editing checks dispatch every conversion control without a preparation act
 They compare 42 control combinations with native pixels and cover prepared-file editing, rapid input, invalid input, stale decoding, image switching, removal, and restoration.
 Task list checks exercise direct row actions, capacity, undo conflicts, composition, preserved drafts, focus, calendar navigation, and unsupported USB browsers.
 The browser inventories action and field icons and executes rejecting fixtures for missing, hidden, unnamed, and colored graphics.
+Viewport checks require six ordinary tasks and primary actions to fit desktop and mobile windows, reject clipping and empty targets, and exercise preview switching and enlarged note editing.
 The download check lets Chrome save a file, reads it from disk, and compares its decoded pixels with the native reference.
 It waits for the matching browser download to complete before reading the saved bytes.
 Run `mise x -- just firmware` for offline, Wi-Fi, Bluetooth Low Energy (BLE), and both radio features, including merged 32 MB flash images.

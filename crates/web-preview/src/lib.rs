@@ -93,6 +93,9 @@ fn element(document: &web_sys::Document, id: &str) -> Result<web_sys::Element, J
 
 fn update(document: &web_sys::Document, preview: &WebPreview) -> Result<(), JsValue> {
     preview.draw(element(document, "display")?.dyn_into()?)?;
+    if daily::previewing(document)? {
+        preview.draw(element(document, "daily-display")?.dyn_into()?)?;
+    }
     element(document, "state")?.set_text_content(Some(&preview.text()));
     let app = preview.inner.app();
     let screen = match app.screen {
