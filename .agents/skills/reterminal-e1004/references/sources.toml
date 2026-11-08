@@ -306,3 +306,11 @@ model = "ESP32-S3 retained gallery selection"
 revision = "esp-hal 1.2.0 and esp-hal-procmacros 0.23.0; local SDK source checks Persistable atomic word arrays"
 license = "MIT OR Apache-2.0; SDK attribute used without copying implementation"
 unverified = "Physical retention and current consumption across device sleep; default and explicit power configuration preserve fast memory"
+
+[[source]]
+url = "https://github.com/esp-rs/esp-hal/blob/esp-hal-v1.2.2/esp-hal/CHANGELOG.md"
+retrieved = "2026-11-08"
+model = "ESP32-S3 firmware dependency patch update"
+revision = "esp-hal 1.2.2; Cargo archive sha256 c9e3dfd511fed638fe41fdb4595f8c7f0cbb488d0f0cf2bbc063d76d805057cf"
+license = "MIT OR Apache-2.0; dependency and external reference only"
+unverified = "Physical peripheral behavior remains outside host tests and target compilation"

@@ -9,7 +9,7 @@ publish.workspace = true
 [dependencies]
 device-preview = { path = "../preview" }
 device-core = { path = "../device-core" }
-png = "=0.18.0"
+png = "=0.18.1"
 minifb = "=0.29.0"
 
 [lints]
