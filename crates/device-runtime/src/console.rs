@@ -121,6 +121,7 @@ async fn dispatch(
                         "task toggle N (N: 1 to 6; text: 1 to 48 printable ASCII characters)\r\n",
                         "note set TEXT | note clear (up to 160 printable ASCII characters)\r\n",
                         "rotation 0|1|2|3 | hold previous|refresh|next\r\n",
+                        "calendar today|YYYY-MM\r\n",
                         "wifi scan | wifi disconnect | wifi connect SSID<TAB>PASSWORD\r\n",
                         "ble on | ble off | awake 0..3600\r\n",
                         "gallery select 1..8 | gallery next | gallery previous\r\n",

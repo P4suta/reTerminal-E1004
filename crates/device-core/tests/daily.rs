@@ -7,6 +7,106 @@ use device_core::{
 };
 
 #[test]
+fn direct_calendar_commands_preserve_content_and_select_every_supported_month() {
+    let mut original = App::default()
+        .transition(AppEvent::EditDaily(DailyEdit::Note(
+            Text::new("Keep this note").unwrap(),
+        )))
+        .state;
+    original.pending = false;
+    original.sleep_requested = true;
+    let today_event = commands::parse("calendar today")
+        .unwrap()
+        .unwrap()
+        .into_event()
+        .unwrap();
+    let initial_today = original.transition(today_event).state;
+    assert_eq!(initial_today.screen, ScreenId::Calendar);
+    assert_eq!(initial_today.calendar_month, None);
+    assert!(!initial_today.sleep_requested);
+    for year in 2000..=2099 {
+        for number in 1..=12 {
+            let text = format!("calendar {year:04}-{number:02}");
+            let event = commands::parse(&text)
+                .expect("calendar command")
+                .unwrap()
+                .into_event()
+                .unwrap();
+            let transition = original.transition(event);
+            let selected = transition.state;
+            assert!(
+                selected.pending
+                    || transition
+                        .actions
+                        .iter()
+                        .any(|action| matches!(action, Action::Display { .. }))
+            );
+            assert!(!selected.sleep_requested);
+            assert_eq!(selected.screen, ScreenId::Calendar);
+            assert_eq!(selected.calendar_month, Month::new(year, number));
+            assert_eq!(selected.daily, original.daily);
+            assert_eq!(selected.settings().calendar_month, selected.calendar_month);
+            let mut settled = selected;
+            settled.pending = false;
+            settled.refresh = device_core::app::RefreshState::Idle;
+            let repeated = settled.transition(event);
+            assert!(!repeated.state.pending);
+            assert!(!repeated
+                .actions
+                .iter()
+                .any(|action| matches!(action, Action::Display { .. })));
+            let today = selected
+                .transition(
+                    commands::parse("calendar today")
+                        .unwrap()
+                        .unwrap()
+                        .into_event()
+                        .unwrap(),
+                )
+                .state;
+            assert_eq!(today.screen, ScreenId::Calendar);
+            assert_eq!(today.calendar_month, None);
+            assert_eq!(today.daily, original.daily);
+        }
+    }
+    for text in [
+        "calendar",
+        "calendar 1999-12",
+        "calendar 2100-01",
+        "calendar 2028-00",
+        "calendar 2028-13",
+        "calendar 2028-2",
+        "calendar +028-02",
+        "calendar 2028-02x",
+        "calendar 2028-02 now",
+        "calendar 2028/02",
+        "calendar tomorrow",
+    ] {
+        assert!(
+            commands::parse(text).is_some_and(|result| result.is_err()),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn calendar_text_rejects_every_out_of_range_numeric_year_and_month() {
+    for year in 0..=9999 {
+        let value = format!("{year:04}-01");
+        let expected = if (2000..=2099).contains(&year) {
+            Month::new(year, 1)
+        } else {
+            None
+        };
+        assert_eq!(Month::parse(&value), expected, "{value}");
+    }
+    for number in 0..=99 {
+        let value = format!("2028-{number:02}");
+        assert_eq!(Month::parse(&value), Month::new(2028, number), "{value}");
+    }
+}
+
+#[test]
 fn calendar_matches_an_independent_day_count_for_the_entire_rtc_century() {
     let mut weekday = 5;
     let names = [

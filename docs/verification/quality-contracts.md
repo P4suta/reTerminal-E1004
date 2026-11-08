@@ -39,6 +39,69 @@ Each normal workspace receives narrow-layout, text enlargement, spacing, and tar
 The normal calendar uses browser local time, while development tools keep the fixed example.
 A browser clock fixture checks a leap-day date without depending on the test machine's wall clock.
 
+## Direct daily editing and action icons
+
+Daily editing must expose named tasks and their actions in the same list.
+The earlier browser check saved one numbered entry and never required a task list, so it accepted the slot-selection form.
+The browser now checks Enter to add, Space to complete and reopen, inline editing, Escape cancellation, composition, deletion, batch deletion, undo, capacity, and navigation with pending drafts.
+The final addition to a full list moves focus to its task because the addition form becomes hidden.
+Deletion recovery refuses to overwrite a position reused by a later task.
+Task text remains text when it contains HTML syntax.
+
+The interaction gate inventories buttons, links, disclosures, fields, and focusable regions across every workspace.
+It requires a visible monochrome icon and a name for assistive technology, with native state indicators for checkboxes and radio buttons.
+Rejecting fixtures remove icons, hide them, expose redundant graphics to assistive technology, remove their paths, or paint them with other colors.
+SVG paint can inherit the checked foreground color or omit a paint operation.
+The style sheet gate still rejects colored and translucent paint.
+The [W3C functional image guidance](https://www.w3.org/WAI/tutorials/images/functional/) governs names and redundant graphics.
+The owner requires icons for interactive elements and 48 CSS pixel targets.
+
+The browser task list follows entry, completion, editing, and cancellation conventions from the [TodoMVC specification](https://github.com/tastejs/todomvc/blob/master/app-spec.md).
+The native [checkbox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/) preserves Space and checked-state semantics.
+The desktop and narrow layouts put the daily editor before its preview in both visual and document order under [Meaningful Sequence](https://www.w3.org/TR/WCAG22/#meaningful-sequence).
+The calendar retains its two-dimensional date relationships under the [Reflow](https://www.w3.org/TR/WCAG22/#reflow) exception and supports keyboard scrolling inside its region.
+
+Setting identical task text preserves completion, so sending only text and completed states could leave an unchecked browser task completed on the device.
+Delivery now sends an explicit open or done command for each populated task.
+The browser serial fixture passes those commands through the production receiver model instead of only collecting strings.
+It starts with an identical completed task and requires the unchecked browser task to reopen it.
+It also edits task content and an unsaved note during delivery and checks both the captured device content and the message about newer edits.
+Calendar delivery sends the captured date and selected month through validated shared commands.
+Native tests cover every supported month and persistence through the production console, sleep, and restart.
+Source-bound Kani checks the seven-byte month parser and calendar selection from the default app state.
+Mutation testing exposed an unchecked arithmetic change for invalid years below 2000.
+The native parser test now checks all four-digit years and two-digit months, including values outside the supported ranges.
+
+The Portable Network Graphics (PNG) download test treated a file's existence as completed delivery.
+A decoding failure exposed that unverified filesystem assumption.
+The test now waits for the matching download identifier's completed event before reading the file and comparing all pixels with the native frame.
+Cancellation and an ended event stream fail the check.
+The [Chrome download progress contract](https://chromedevtools.github.io/devtools-protocol/tot/Browser/#event-downloadProgress) supplies the completion boundary.
+
+## Viewport layout
+
+Routine editing must keep the task rows and primary action inside the window.
+The earlier layout checks covered horizontal reflow but accepted task rows and sending below the viewport.
+The browser now requires all six ordinary tasks to fit at 1280 by 720, 1024 by 768, and 390 by 844.
+It also checks note, calendar, image, and connection controls at desktop and mobile sizes.
+The gate rejects offscreen rows, ancestor clipping, and empty preview targets.
+
+Compact navigation and task tools leave room for the content without reducing the 18 pixel action labels or 48 pixel standalone targets.
+On narrow screens, the Preview button switches daily editing and a canvas rendered from the same app state.
+Its expanded state and keyboard activation follow the [W3C disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+Selecting Tasks, Note, or Calendar also returns to editing, and widening the window restores the editor and visible keyboard focus.
+The tests preserve a draft across both return paths and compare the preview canvases.
+
+An initial fixed-height layout let enlarged navigation and delivery controls shrink the note region to zero height.
+The pointer event reached the panel instead of the Save note button.
+The `min-height` rules use font-relative units to keep an editing region readable when enlarged text exceeds the window.
+The browser saves a note with doubled text at four widths and checks focus visibility.
+Long content, expanded controls, and short windows keep scrolling under the [W3C reflow guidance](https://www.w3.org/WAI/WCAG22/Understanding/reflow.html) and [text resizing guidance](https://www.w3.org/WAI/WCAG22/Understanding/resize-text.html).
+Content remains reachable under [Focus Not Obscured](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum.html).
+
+Routine task results remain available through task rows and the existing status region under [W3C status-message guidance](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html).
+Notices and licenses remain in Device under About this app, using the native [HTML disclosure contract](https://html.spec.whatwg.org/multipage/interactive-elements.html#the-details-element).
+
 ## Color media and transport authority
 
 Image files validate their header, checksum, exact packed length, and all palette nibbles before admission.

@@ -795,6 +795,18 @@ fn refresh_actions(
         .as_ref()
         .is_some_and(|connection| !connection.closed.get());
     let available = !studio.busy;
+    let send_help = if !serial_supported() {
+        "Use Chrome or Edge on a computer to send content by USB."
+    } else if !available {
+        "Wait for the display to finish."
+    } else if !connected {
+        "Choose your display when prompted."
+    } else {
+        ""
+    };
+    for id in ["image-send-help", "daily-send-help"] {
+        message(document, id, send_help);
+    }
     enabled(document, "export-image", ready)?;
     enabled(document, "export-prepared", ready)?;
     enabled(
@@ -928,6 +940,7 @@ enum PreparedAction {
     Daily {
         settings: Box<device_core::settings::Settings>,
         screen: String,
+        clock: Option<device_core::telemetry::DateTime>,
     },
 }
 
@@ -1052,7 +1065,15 @@ pub fn mount(document: web_sys::Document, preview: Rc<RefCell<WebPreview>>) -> R
                     let settings = super::apply_daily_drafts(&document, &mut preview.borrow_mut())?;
                     Some(PreparedAction::Daily {
                         settings: Box::new(settings),
-                        screen: value(&document, "daily-screen")?,
+                        screen: super::daily::screen(&document)?.into(),
+                        clock: match preview.borrow().inner.app().telemetry.clock {
+                            device_core::telemetry::Sample::Fresh { value, .. }
+                                if value.valid() =>
+                            {
+                                Some(value)
+                            }
+                            _ => None,
+                        },
                     })
                 } else {
                     None
@@ -1509,6 +1530,7 @@ async fn perform(
                     let Some(PreparedAction::Daily {
                         settings: app,
                         screen,
+                        clock,
                     }) = upload
                     else {
                         return Err(failure("Check the daily content and try sending again."));
@@ -1534,8 +1556,14 @@ async fn perform(
                                 format!("task set {} {}", i + 1, task.text.as_str())
                             })
                             .await?;
-                        if task.done {
-                            connection.command(&format!("task done {}", i + 1)).await?;
+                        if !task.text.is_empty() {
+                            connection
+                                .command(&format!(
+                                    "task {} {}",
+                                    if task.done { "done" } else { "open" },
+                                    i + 1
+                                ))
+                                .await?;
                         }
                     }
                     connection
@@ -1546,11 +1574,50 @@ async fn perform(
                         })
                         .await?;
                     connection.command("resume last").await?;
-                    connection.command(&format!("screen {screen}")).await?;
+                    if screen == "calendar" {
+                        if let Some(clock) = clock {
+                            connection
+                                .command(&format!(
+                                    "rtc {:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+                                    clock.year,
+                                    clock.month,
+                                    clock.day,
+                                    clock.hour,
+                                    clock.minute,
+                                    clock.second
+                                ))
+                                .await?;
+                        }
+                        connection
+                            .command(&app.calendar_month.map_or_else(
+                                || "calendar today".into(),
+                                |month| {
+                                    format!("calendar {:04}-{:02}", month.year(), month.number())
+                                },
+                            ))
+                            .await?;
+                    } else {
+                        connection.command(&format!("screen {screen}")).await?;
+                    }
+                    let newer = {
+                        let current = preview.borrow();
+                        let settings = current.inner.app().settings();
+                        settings.daily != app.daily
+                            || settings.calendar_month != app.calendar_month
+                            || settings.rotation != app.rotation
+                            || settings.refresh_seconds != app.refresh_seconds
+                            || settings.gallery.slideshow != app.gallery.slideshow
+                            || super::daily::screen(document)? != screen
+                            || super::daily::drafts_changed(document, &current.inner)?
+                    };
                     message(
                         document,
                         "daily-send-status",
-                        "Content sent. The display is updating.",
+                        if newer {
+                            "Content sent. Send again to include your newer edits."
+                        } else {
+                            "Content sent. The display is updating."
+                        },
                     );
                 }
                 "device-status" => {

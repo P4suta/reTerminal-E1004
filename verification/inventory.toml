@@ -14,6 +14,8 @@ core_harnesses = [
   "configuration_acknowledgement_preserves_a_different_request",
   "saved_content_never_replaces_a_reverted_edit",
   "calendar_cells_and_navigation_are_bounded",
+  "direct_calendar_month_parser_and_selection_preserve_the_domain",
+  "direct_calendar_selection_preserves_other_daily_content",
   "task_selection_stays_in_range_and_is_reversible",
   "printable_text_is_bounded_and_rejects_control_bytes",
   "daily_edits_round_trip_and_preserve_unselected_tasks",

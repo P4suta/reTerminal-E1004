@@ -1,4 +1,4 @@
-use super::{draw_frame, element, value, EventHandler, WebPreview, HANDLERS};
+use super::{daily, draw_frame, element, value, EventHandler, WebPreview, HANDLERS};
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -33,6 +33,7 @@ fn selected(document: &web_sys::Document, view: &str) -> Result<bool, JsValue> {
 pub fn refresh(document: &web_sys::Document, preview: &WebPreview) -> Result<(), JsValue> {
     let images = selected(document, "images")?;
     let device = selected(document, "device")?;
+    let daily = selected(document, "daily")?;
     let tools = selected(document, "tools")?;
     visible(document, "preview-pane", !device)?;
     visible(document, "preview-controls", tools)?;
@@ -43,6 +44,8 @@ pub fn refresh(document: &web_sys::Document, preview: &WebPreview) -> Result<(),
         "workspace connection-only"
     } else if tools {
         "workspace tools"
+    } else if daily {
+        "workspace daily"
     } else {
         "workspace"
     });
@@ -52,6 +55,7 @@ pub fn refresh(document: &web_sys::Document, preview: &WebPreview) -> Result<(),
         .and_then(|number| preview.export_image(number));
     visible(document, "empty-image", images && image.is_none())?;
     visible(document, "image-actions", images && image.is_some())?;
+    visible(document, "image-send-help", images && image.is_some())?;
     visible(document, "display", !images || image.is_some())?;
     if images {
         if let Some(file) = image {
@@ -96,12 +100,24 @@ fn activate(
     if view == "daily" {
         #[cfg(target_arch = "wasm32")]
         if !tools_enabled()? {
-            super::refresh_local_clock(&mut preview.borrow_mut())?;
+            super::refresh_local_clock(&mut preview.borrow_mut().inner)?;
         }
-        let screen = value(document, "daily-screen")?;
-        if device_core::app::ScreenId::parse(&screen) != Some(preview.borrow().inner.app().screen) {
+        let screen = daily::screen(document)?;
+        if device_core::app::ScreenId::parse(screen) != Some(preview.borrow().inner.app().screen) {
             preview.borrow_mut().command(&format!("screen {screen}"))?;
         }
+    }
+    let workspace = element(document, "workspace")?;
+    let first = element(
+        document,
+        if view == "daily" {
+            "task-pane"
+        } else {
+            "preview-pane"
+        },
+    )?;
+    if workspace.first_element_child().as_ref() != Some(&first) {
+        workspace.insert_before(&first, workspace.first_child().as_ref())?;
     }
     super::update(document, &preview.borrow())?;
     if focus {

@@ -119,6 +119,7 @@ pub enum AppEvent {
     Button(Button),
     Hold(Button),
     SelectScreen(ScreenId),
+    SelectCalendarMonth(Option<Month>),
     EditDaily(DailyEdit),
     Gallery(GalleryEvent),
     ResumeGallery(Settings),
@@ -390,6 +391,14 @@ impl App {
             AppEvent::SelectScreen(screen) => {
                 if self.screen != screen {
                     self.screen = screen;
+                    self.pending = true;
+                    self.sleep_requested = false;
+                }
+            }
+            AppEvent::SelectCalendarMonth(month) => {
+                if self.screen != ScreenId::Calendar || self.calendar_month != month {
+                    self.screen = ScreenId::Calendar;
+                    self.calendar_month = month;
                     self.pending = true;
                     self.sleep_requested = false;
                 }

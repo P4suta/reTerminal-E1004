@@ -7,30 +7,38 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <a class="skip-link" href="#workspace-tabs">Skip to workspace</a>
+  <a class="skip-link" href="#workspace-tabs" data-icon="right">Skip to workspace</a>
   <main>
     <header><h1>reTerminal E1004</h1><p id="connection-summary" role="status">No display connected</p></header>
     <noscript>Enable JavaScript to edit images and connect your display.</noscript>
     <p id="error" role="alert"></p>
     <div class="tabs" id="workspace-tabs" role="tablist" aria-label="Workspace">
-      <button type="button" role="tab" id="tab-images" aria-controls="panel-images" aria-selected="true">Images</button>
-      <button type="button" role="tab" id="tab-daily" aria-controls="panel-daily" aria-selected="false" tabindex="-1">Daily</button>
-      <button type="button" role="tab" id="tab-device" aria-controls="panel-device" aria-selected="false" tabindex="-1">Device</button>
-      <button type="button" role="tab" id="tab-tools" aria-controls="panel-tools" aria-selected="false" tabindex="-1" hidden>Tools</button>
+      <button type="button" role="tab" id="tab-images" data-icon="image" aria-controls="panel-images" aria-selected="true">Images</button>
+      <button type="button" role="tab" id="tab-daily" data-icon="list" aria-controls="panel-daily" aria-selected="false" tabindex="-1">Daily</button>
+      <button type="button" role="tab" id="tab-device" data-icon="device" aria-controls="panel-device" aria-selected="false" tabindex="-1">Device</button>
+      <button type="button" role="tab" id="tab-tools" data-icon="settings" aria-controls="panel-tools" aria-selected="false" tabindex="-1" hidden>Tools</button>
     </div>
     <div class="workspace" id="workspace">
       <section class="preview-pane" id="preview-pane" aria-labelledby="preview-heading">
         <div class="section-title"><h2 id="preview-heading">Preview</h2><p id="image-name"></p></div>
+        <div id="preview-controls" hidden>
+          <label for="screen" data-icon="device">Screen</label>
+          <select id="screen"><option value="status">Device Status</option><option value="calendar">Calendar</option><option value="checklist">Checklist</option><option value="notes">Notes</option><option value="diagnostics">Diagnostics</option><option value="drawing">Drawing</option><option value="gallery">Gallery</option></select>
+          <div class="buttons"><button type="button" id="previous" data-icon="left" aria-label="Previous screen">Previous</button><button type="button" id="refresh" data-icon="refresh">Refresh</button><button type="button" id="next" data-icon="right" aria-label="Next screen">Next</button></div>
+          <div class="buttons"><button type="button" id="hold-previous" data-icon="left">Hold previous</button><button type="button" id="hold-refresh" data-icon="refresh">Hold middle</button><button type="button" id="hold-next" data-icon="right">Hold next</button></div>
+          <p class="hint" id="gesture-help">Hold middle to measure and refresh.</p>
+          <p id="update-status" role="status" aria-atomic="true">Loading preview.</p>
+        </div>
         <div id="image-source">
-          <label for="image-file">Choose image</label>
-          <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,.e1004-image,.epd" aria-describedby="image-file-help media-error">
+          <div class="image-upload-row"><label for="image-file" class="task-input-label" data-icon="upload"><span class="sr-only">Choose image</span></label><input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,.e1004-image,.epd" aria-describedby="image-file-help media-error"></div>
           <p id="image-file-help" class="hint">Photos and saved images, up to 20 MB.</p>
         </div>
         <div id="image-actions" class="buttons">
-          <button type="button" id="send-image" class="primary" disabled>Send to display</button>
-          <button type="button" id="export-image" disabled>Save image</button>
-          <button type="button" id="cancel-upload" hidden>Cancel sending</button>
+          <button type="button" id="send-image" data-icon="send" class="primary" aria-describedby="image-send-help" disabled>Send to display</button>
+          <button type="button" id="export-image" data-icon="download" class="icon-button" aria-label="Save image" title="Save image" disabled><span class="sr-only">Save image</span></button>
+          <button type="button" id="cancel-upload" data-icon="close" hidden>Cancel sending</button>
         </div>
+        <p id="image-send-help" class="hint" hidden></p>
         <p id="transfer-status" role="status" aria-atomic="true"></p>
         <p id="media-error" role="alert"></p>
         <div class="preview-stage">
@@ -40,84 +48,105 @@
         <p id="preview-caption" class="hint">Edits appear automatically.
         Your display changes only when you choose Send to display.</p>
         <p id="media-status" role="status" aria-atomic="true">Choose a file to start.</p>
-        <div id="preview-controls" hidden>
-          <label for="screen">Screen</label>
-          <select id="screen"><option value="status">Device Status</option><option value="calendar">Calendar</option><option value="checklist">Checklist</option><option value="notes">Notes</option><option value="diagnostics">Diagnostics</option><option value="drawing">Drawing</option><option value="gallery">Gallery</option></select>
-          <div class="buttons"><button type="button" id="previous" aria-label="Previous screen">Previous</button><button type="button" id="refresh">Refresh</button><button type="button" id="next" aria-label="Next screen">Next</button></div>
-          <div class="buttons"><button type="button" id="hold-previous">Hold previous</button><button type="button" id="hold-refresh">Hold middle</button><button type="button" id="hold-next">Hold next</button></div>
-          <p class="hint" id="gesture-help">Hold middle to measure and refresh.</p>
-          <p id="update-status" role="status" aria-atomic="true">Loading preview.</p>
-        </div>
       </section>
-      <div class="task-pane">
+      <div class="task-pane" id="task-pane">
         <section id="panel-images" role="tabpanel" aria-labelledby="tab-images" tabindex="0">
-          <h2>Images</h2>
+          <h2 class="sr-only">Images</h2>
           <div class="field-pair">
-            <div><label for="image-slot">Image</label><select id="image-slot"><option value="1">Image 1</option><option value="2">Image 2</option><option value="3">Image 3</option><option value="4">Image 4</option><option value="5">Image 5</option><option value="6">Image 6</option><option value="7">Image 7</option><option value="8">Image 8</option></select></div>
-            <div><label for="rotation">Orientation</label><select id="rotation"><option value="0">Portrait</option><option value="1">Landscape</option><option value="2">Upside down</option><option value="3">Landscape, reversed</option></select></div>
+            <div><label for="image-slot" data-icon="image">Image</label><select id="image-slot"><option value="1">Image 1</option><option value="2">Image 2</option><option value="3">Image 3</option><option value="4">Image 4</option><option value="5">Image 5</option><option value="6">Image 6</option><option value="7">Image 7</option><option value="8">Image 8</option></select></div>
+            <div><label for="rotation" data-icon="rotate">Orientation</label><select id="rotation"><option value="0">Portrait</option><option value="1">Landscape</option><option value="2">Upside down</option><option value="3">Landscape, reversed</option></select></div>
           </div>
           <div class="field-pair">
-            <div><label for="image-fit">Fit</label><select id="image-fit"><option value="0">Fit inside</option><option value="1">Fill and crop</option><option value="2">Original size</option><option value="3">Stretch</option></select></div>
-            <div><label for="image-palette">Colors</label><select id="image-palette"><option value="six">Six colors</option><option value="mono">Black and white</option></select></div>
+            <div><label for="image-fit" data-icon="fit">Fit</label><select id="image-fit"><option value="0">Fit inside</option><option value="1">Fill and crop</option><option value="2">Original size</option><option value="3">Stretch</option></select></div>
+            <div><label for="image-palette" data-icon="palette">Colors</label><select id="image-palette"><option value="six">Six colors</option><option value="mono">Black and white</option></select></div>
           </div>
-          <label for="image-dither">Dithering</label>
+          <label for="image-dither" data-icon="dither">Dithering</label>
           <select id="image-dither"><option value="ordered">Balanced</option><option value="diffusion">Photo detail</option><option value="none">Solid colors</option></select>
           <p class="hint">Balanced suits most images.
           Photo detail preserves more shading.</p>
-          <details id="image-adjustments"><summary>Fine adjustments</summary>
-            <label for="image-anchor">Position</label><select id="image-anchor"><option value="0">Top left</option><option value="1">Top center</option><option value="2">Top right</option><option value="3">Middle left</option><option value="4" selected>Center</option><option value="5">Middle right</option><option value="6">Bottom left</option><option value="7">Bottom center</option><option value="8">Bottom right</option></select>
-            <label for="image-brightness">Brightness</label><input id="image-brightness" type="number" min="-100" max="100" step="1" value="0" required aria-describedby="brightness-help media-error"><p id="brightness-help" class="hint">-100 to 100.</p>
-            <label for="image-contrast">Contrast</label><input id="image-contrast" type="number" min="0" max="200" step="1" value="100" required aria-describedby="contrast-help media-error"><p id="contrast-help" class="hint">0 to 200.</p>
-            <label for="image-saturation">Saturation</label><input id="image-saturation" type="number" min="0" max="200" step="1" value="100" required aria-describedby="saturation-help media-error"><p id="saturation-help" class="hint">0 to 200.</p>
+          <details id="image-adjustments"><summary data-icon="settings">Fine adjustments</summary>
+            <label for="image-anchor" data-icon="position">Position</label><select id="image-anchor"><option value="0">Top left</option><option value="1">Top center</option><option value="2">Top right</option><option value="3">Middle left</option><option value="4" selected>Center</option><option value="5">Middle right</option><option value="6">Bottom left</option><option value="7">Bottom center</option><option value="8">Bottom right</option></select>
+            <label for="image-brightness" data-icon="sun">Brightness</label><input id="image-brightness" type="number" min="-100" max="100" step="1" value="0" required aria-describedby="brightness-help media-error"><p id="brightness-help" class="hint">-100 to 100.</p>
+            <label for="image-contrast" data-icon="contrast">Contrast</label><input id="image-contrast" type="number" min="0" max="200" step="1" value="100" required aria-describedby="contrast-help media-error"><p id="contrast-help" class="hint">0 to 200.</p>
+            <label for="image-saturation" data-icon="drop">Saturation</label><input id="image-saturation" type="number" min="0" max="200" step="1" value="100" required aria-describedby="saturation-help media-error"><p id="saturation-help" class="hint">0 to 200.</p>
             <label for="image-invert"><input id="image-invert" type="checkbox">Invert image</label>
-            <div class="buttons"><button type="button" id="reset-image">Reset edits</button></div>
+            <div class="buttons"><button type="button" id="reset-image" data-icon="undo">Reset edits</button></div>
           </details>
-          <details><summary>Create text or QR code</summary>
-            <label for="poster-text">Text or link</label><textarea id="poster-text" rows="3" maxlength="2000" aria-describedby="poster-help media-error"></textarea>
+          <details><summary data-icon="text">Create text or QR code</summary>
+            <label for="poster-text" data-icon="text">Text or link</label><textarea id="poster-text" rows="3" maxlength="2000" aria-describedby="poster-help media-error"></textarea>
             <p id="poster-help" class="hint">Text images support your browser's fonts and languages.</p>
-            <label for="poster-size">Text size</label><input id="poster-size" type="number" min="16" max="160" value="64" step="1" aria-describedby="poster-size-help media-error"><p id="poster-size-help" class="hint">16 to 160 pixels.</p>
-            <div class="buttons"><button type="button" id="make-text">Create text image</button><button type="button" id="make-qr">Create QR code</button></div>
+            <label for="poster-size" data-icon="text">Text size</label><input id="poster-size" type="number" min="16" max="160" value="64" step="1" aria-describedby="poster-size-help media-error"><p id="poster-size-help" class="hint">16 to 160 pixels.</p>
+            <div class="buttons"><button type="button" id="make-text" data-icon="text">Create text image</button><button type="button" id="make-qr" data-icon="qr">Create QR code</button></div>
           </details>
-          <details><summary>Slideshow and image library</summary>
-            <label for="slideshow-seconds">Change image every</label><select id="slideshow-seconds"><option value="off">Paused</option><option value="60">1 minute</option><option value="300">5 minutes</option><option value="900">15 minutes</option><option value="3600">1 hour</option><option value="86400">1 day</option></select>
-            <div class="buttons"><button type="button" id="apply-slideshow">Save slideshow setting</button><button type="button" id="export-prepared" disabled>Save for SD card</button><button type="button" id="delete-image">Remove image</button><button type="button" id="undo-delete" hidden>Undo removal</button></div>
+          <details><summary data-icon="image">Slideshow and image library</summary>
+            <label for="slideshow-seconds" data-icon="clock">Change image every</label><select id="slideshow-seconds"><option value="off">Paused</option><option value="60">1 minute</option><option value="300">5 minutes</option><option value="900">15 minutes</option><option value="3600">1 hour</option><option value="86400">1 day</option></select>
+            <div class="buttons"><button type="button" id="apply-slideshow" data-icon="save">Save slideshow setting</button><button type="button" id="export-prepared" data-icon="sd" disabled>Save for SD card</button><button type="button" id="delete-image" data-icon="delete">Remove image</button><button type="button" id="undo-delete" data-icon="undo" hidden>Undo removal</button></div>
             <p class="hint">Save images before closing the app to keep a copy.</p>
           </details>
         </section>
         <section id="panel-daily" role="tabpanel" aria-labelledby="tab-daily" tabindex="0" hidden>
-          <h2>Daily</h2>
-          <label for="daily-screen">Preview</label><select id="daily-screen"><option value="checklist">Checklist</option><option value="notes">Note</option><option value="calendar">Calendar</option></select>
-          <p id="daily-feedback" role="status" aria-atomic="true"></p>
-          <form id="task-editor" novalidate>
-            <h3>Checklist</h3>
-            <label for="task-number">Task</label><select id="task-number"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
-            <label for="task-text">Task text</label><input id="task-text" type="text" maxlength="48" aria-describedby="task-help task-text-error">
-            <p class="hint" id="task-help">Up to 48 English letters, numbers, and punctuation marks.</p>
-            <p class="field-error" id="task-text-error" role="alert"></p>
-            <div class="buttons"><button type="submit" id="task-save">Save task</button><button type="button" id="task-toggle">Mark done</button><button type="button" id="task-clear">Remove task</button></div>
-          </form>
-          <form id="note-editor" novalidate>
-            <h3>Note</h3>
-            <label for="note-text">Note text</label><input id="note-text" type="text" maxlength="160" aria-describedby="note-help note-text-error">
-            <p class="hint" id="note-help">Up to 160 English letters, numbers, and punctuation marks.</p>
-            <p class="field-error" id="note-text-error" role="alert"></p>
-            <div class="buttons"><button type="submit" id="note-save">Save note</button><button type="button" id="note-clear">Clear note</button></div>
-          </form>
-          <div class="buttons"><button type="button" id="send-settings" class="primary">Send to display</button></div>
+          <h2 class="sr-only">Daily</h2>
+          <div class="content-switcher" role="group" aria-label="Daily content">
+            <button type="button" id="daily-checklist" data-icon="list" aria-pressed="true">Tasks</button>
+            <button type="button" id="daily-notes" data-icon="note" aria-pressed="false">Note</button>
+            <button type="button" id="daily-calendar" data-icon="calendar" aria-pressed="false">Calendar</button>
+            <button type="button" id="daily-preview-toggle" data-icon="device" class="mobile-preview" aria-expanded="false" aria-controls="daily-preview-content">Preview</button>
+          </div>
+          <p id="daily-feedback" class="sr-only" role="status" aria-atomic="true"></p>
+          <section id="checklist-content" aria-labelledby="tasks-heading">
+            <h3 id="tasks-heading" class="sr-only">Tasks</h3>
+            <div class="task-heading">
+              <form id="task-editor" novalidate>
+              <div class="task-entry"><label for="task-text" class="task-input-label" data-icon="list"><span class="sr-only">New task</span></label><input id="task-text" type="text" maxlength="48" required autocomplete="off" placeholder="Add a task" aria-describedby="task-help task-text-error task-full"><button type="submit" id="task-save" data-icon="plus" class="primary icon-button" aria-label="Add task" title="Add task"><span class="sr-only">Add task</span></button></div>
+              <p class="hint" id="task-help">English text, up to 48 characters.</p>
+              <p class="field-error" id="task-text-error" role="alert"></p>
+              </form>
+              <div class="task-toolbar">
+                <div class="task-summary"><p id="task-count" role="status" aria-atomic="true">0 of 0 completed</p><p id="task-full" class="hint" hidden>List full.
+                Delete a task first.</p></div>
+                <button type="button" id="task-clear-completed" data-icon="delete" disabled>Clear completed</button>
+                <button type="button" id="task-undo" class="icon-button" data-icon="undo" aria-label="Undo deletion" title="Undo deletion" aria-describedby="task-undo-help" hidden><span class="sr-only">Undo</span></button>
+              </div>
+            </div>
+            <p id="task-empty">No tasks yet.
+            Add your first task above.</p>
+            <ul id="task-list" aria-label="Tasks"></ul>
+            <p id="task-undo-help" class="hint" hidden>Undo is unavailable because the task list changed.</p>
+          </section>
+          <section id="notes-content" aria-labelledby="note-heading" hidden>
+            <form id="note-editor" novalidate>
+              <h3 id="note-heading">Note</h3>
+              <label for="note-text" data-icon="note">Note text</label><input id="note-text" type="text" maxlength="160" aria-describedby="note-help note-text-error">
+              <p class="hint" id="note-help">Up to 160 English letters, numbers, and punctuation marks.</p>
+              <p class="field-error" id="note-text-error" role="alert"></p>
+              <div class="buttons"><button type="submit" id="note-save" data-icon="save" class="primary">Save note</button><button type="button" id="note-discard" data-icon="undo">Discard changes</button><button type="button" id="note-clear" data-icon="delete">Clear note</button></div>
+            </form>
+          </section>
+          <section id="calendar-content" aria-labelledby="calendar-heading" hidden>
+            <h3 id="calendar-heading" class="sr-only">Calendar</h3>
+            <p class="hint">Uses your computer's local date and time.</p>
+            <div class="calendar-navigation"><button type="button" id="calendar-previous" class="icon-button" data-icon="left" aria-label="Previous month" title="Previous month"><span class="sr-only">Previous month</span></button><p id="calendar-month" data-icon="calendar" role="status" aria-atomic="true"></p><button type="button" id="calendar-next" class="icon-button" data-icon="right" aria-label="Next month" title="Next month"><span class="sr-only">Next month</span></button><button type="button" id="calendar-today" data-icon="calendar">Today</button></div>
+            <div class="calendar-grid" id="calendar-grid" tabindex="0" role="region" aria-labelledby="calendar-month">
+              <table aria-labelledby="calendar-month"><thead><tr><th scope="col"><abbr title="Monday">Mon</abbr></th><th scope="col"><abbr title="Tuesday">Tue</abbr></th><th scope="col"><abbr title="Wednesday">Wed</abbr></th><th scope="col"><abbr title="Thursday">Thu</abbr></th><th scope="col"><abbr title="Friday">Fri</abbr></th><th scope="col"><abbr title="Saturday">Sat</abbr></th><th scope="col"><abbr title="Sunday">Sun</abbr></th></tr></thead><tbody id="calendar-days"></tbody></table>
+            </div>
+          </section>
+          <section id="daily-preview-content" aria-labelledby="daily-preview-heading" hidden><h3 id="daily-preview-heading" class="sr-only">Display preview</h3><div class="preview-stage"><canvas id="daily-display" width="1200" height="1600" role="img" aria-label="Daily display preview"></canvas></div></section>
+          <div class="daily-delivery"><div class="buttons"><button type="button" id="send-settings" data-icon="send" class="primary" aria-describedby="daily-send-help">Send to display</button></div><p id="daily-send-help" class="hint"></p></div>
           <p id="daily-send-status" role="status" aria-atomic="true"></p>
         </section>
         <section id="panel-device" role="tabpanel" aria-labelledby="tab-device" tabindex="0" hidden>
           <h2>Your display</h2>
           <p>Connect a USB data cable and wake the display with a button.</p>
           <p id="connection-status" role="status" aria-atomic="true">No display connected.</p>
-          <div class="buttons"><button type="button" id="device-connect" class="primary">Connect display</button><button type="button" id="device-disconnect" disabled>Disconnect</button></div>
+          <div class="buttons"><button type="button" id="device-connect" data-icon="connect" class="primary">Connect display</button><button type="button" id="device-disconnect" data-icon="disconnect" disabled>Disconnect</button></div>
           <p id="connection-help" class="hint">Choose your display in the browser's connection window.</p>
-          <div class="buttons"><button type="button" id="device-status" disabled>Check display</button><button type="button" id="device-refresh" disabled>Refresh display</button><button type="button" id="device-sleep" disabled>Sleep display</button></div>
-          <details><summary>Saved images and SD card</summary>
-            <label for="device-slot">Image on display</label><select id="device-slot"><option value="1">Image 1</option><option value="2">Image 2</option><option value="3">Image 3</option><option value="4">Image 4</option><option value="5">Image 5</option><option value="6">Image 6</option><option value="7">Image 7</option><option value="8">Image 8</option></select>
-            <div class="buttons"><button type="button" id="device-image" disabled>Show saved image</button><button type="button" id="device-import" disabled>Import from SD</button></div>
+          <div class="buttons"><button type="button" id="device-status" data-icon="info" disabled>Check display</button><button type="button" id="device-refresh" data-icon="refresh" disabled>Refresh display</button><button type="button" id="device-sleep" data-icon="moon" disabled>Sleep display</button></div>
+          <details><summary data-icon="sd">Saved images and SD card</summary>
+            <label for="device-slot" data-icon="image">Image on display</label><select id="device-slot"><option value="1">Image 1</option><option value="2">Image 2</option><option value="3">Image 3</option><option value="4">Image 4</option><option value="5">Image 5</option><option value="6">Image 6</option><option value="7">Image 7</option><option value="8">Image 8</option></select>
+            <div class="buttons"><button type="button" id="device-image" data-icon="image" disabled>Show saved image</button><button type="button" id="device-import" data-icon="upload" disabled>Import from SD</button></div>
             <p class="hint">For SD import, save IMAGE1.EPD through IMAGE8.EPD to the card's main folder.</p>
           </details>
+          <details id="app-info"><summary data-icon="info">About this app</summary><footer><p><a href="./pkg/NOTICE.txt" data-icon="note">Notices</a> · <a href="./pkg/LICENSE-MIT.txt" data-icon="note">MIT license</a> · <a href="./pkg/LICENSE-APACHE.txt" data-icon="note">Apache license</a></p></footer></details>
         </section>
         <section id="panel-tools" role="tabpanel" aria-labelledby="tab-tools" tabindex="0" hidden>
           <h2>Development tools</h2>
@@ -126,36 +155,35 @@
             <h3 id="inputs-heading">Measurements</h3>
             <p id="form-feedback" role="status" aria-atomic="true"></p><p id="form-error" role="alert" aria-atomic="true"></p>
             <form id="measurements">
-              <label for="clock">Device time</label><input id="clock" type="datetime-local" min="2000-01-01T00:00:00" max="2099-12-31T23:59:59" step="1" value="2026-11-05T19:30:00" required aria-describedby="clock-help clock-error"><p class="hint" id="clock-help">2000 to 2099, in device local time.</p><p class="field-error" id="clock-error"></p>
+              <label for="clock" data-icon="clock">Device time</label><input id="clock" type="datetime-local" min="2000-01-01T00:00:00" max="2099-12-31T23:59:59" step="1" value="2026-11-05T19:30:00" required aria-describedby="clock-help clock-error"><p class="hint" id="clock-help">2000 to 2099, in device local time.</p><p class="field-error" id="clock-error"></p>
               <div class="field-pair">
-                <div><label for="temperature">Temperature (°C)</label><input id="temperature" type="number" min="-45" max="130" step="0.01" value="23.45" required aria-describedby="temperature-help temperature-error"><p class="hint" id="temperature-help">-45 to 130 °C.</p><p class="field-error" id="temperature-error"></p></div>
-                <div><label for="humidity">Relative humidity (%)</label><input id="humidity" type="number" min="0" max="100" step="0.01" value="56.78" required aria-describedby="humidity-help humidity-error"><p class="hint" id="humidity-help">0 to 100 %.</p><p class="field-error" id="humidity-error"></p></div>
+                <div><label for="temperature" data-icon="temperature">Temperature (°C)</label><input id="temperature" type="number" min="-45" max="130" step="0.01" value="23.45" required aria-describedby="temperature-help temperature-error"><p class="hint" id="temperature-help">-45 to 130 °C.</p><p class="field-error" id="temperature-error"></p></div>
+                <div><label for="humidity" data-icon="drop">Relative humidity (%)</label><input id="humidity" type="number" min="0" max="100" step="0.01" value="56.78" required aria-describedby="humidity-help humidity-error"><p class="hint" id="humidity-help">0 to 100 %.</p><p class="field-error" id="humidity-error"></p></div>
               </div>
-              <label for="battery">Battery voltage (mV)</label><input id="battery" type="number" min="2000" max="5000" step="1" value="3900" required aria-describedby="battery-help battery-error"><p class="hint" id="battery-help">2000 to 5000 mV.</p><p class="field-error" id="battery-error"></p>
-              <label for="charging">Charging</label><select id="charging" aria-describedby="charging-error"><option value="unknown">Unknown</option><option value="charging">Charging</option><option value="off">Not charging</option></select><p class="field-error" id="charging-error"></p>
-              <details><summary>Storage and radio states</summary>
-                <label for="sd">SD card</label><select id="sd" aria-describedby="sd-error"><option value="absent">Absent</option><option value="ready">Ready</option><option value="fault">Fault</option></select><p class="field-error" id="sd-error"></p>
-                <label for="wifi">Wi-Fi</label><select id="wifi" aria-describedby="wifi-error"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select><p class="field-error" id="wifi-error"></p>
-                <label for="ble">Bluetooth Low Energy</label><select id="ble" aria-describedby="ble-error"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select><p class="field-error" id="ble-error"></p>
+              <label for="battery" data-icon="battery">Battery voltage (mV)</label><input id="battery" type="number" min="2000" max="5000" step="1" value="3900" required aria-describedby="battery-help battery-error"><p class="hint" id="battery-help">2000 to 5000 mV.</p><p class="field-error" id="battery-error"></p>
+              <label for="charging" data-icon="connect">Charging</label><select id="charging" aria-describedby="charging-error"><option value="unknown">Unknown</option><option value="charging">Charging</option><option value="off">Not charging</option></select><p class="field-error" id="charging-error"></p>
+              <details><summary data-icon="settings">Storage and radio states</summary>
+                <label for="sd" data-icon="sd">SD card</label><select id="sd" aria-describedby="sd-error"><option value="absent">Absent</option><option value="ready">Ready</option><option value="fault">Fault</option></select><p class="field-error" id="sd-error"></p>
+                <label for="wifi" data-icon="wifi">Wi-Fi</label><select id="wifi" aria-describedby="wifi-error"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select><p class="field-error" id="wifi-error"></p>
+                <label for="ble" data-icon="bluetooth">Bluetooth Low Energy</label><select id="ble" aria-describedby="ble-error"><option value="off">Off</option><option value="disconnected">Disconnected</option><option value="connected">Connected</option></select><p class="field-error" id="ble-error"></p>
               </details>
-              <div class="buttons"><button type="submit" id="apply">Apply measurements</button><button type="button" id="reset-example">Reset example</button></div>
+              <div class="buttons"><button type="submit" id="apply" data-icon="check">Apply measurements</button><button type="button" id="reset-example" data-icon="undo">Reset example</button></div>
             </form>
           </section>
-          <details class="advanced" open><summary>Update simulation and faults</summary>
+          <details class="advanced" open><summary data-icon="settings">Update simulation and faults</summary>
             <fieldset aria-describedby="completion-mode-help"><legend>Display completion</legend><div class="choices"><label for="immediate"><input type="radio" id="immediate" name="completion" value="immediate" checked>Automatic completion</label><label for="wait"><input type="radio" id="wait" name="completion" value="wait">Manual completion</label></div><p class="hint" id="completion-mode-help">Manual completion waits for Complete update.</p></fieldset>
             <p id="completion-help">Choose Manual completion, then Hold middle, to pause an update.</p>
-            <div class="buttons"><button type="button" id="complete" aria-describedby="completion-help">Complete update</button><button type="button" id="timeout" aria-describedby="completion-help">Simulate panel timeout</button></div>
-            <div class="buttons"><button type="button" id="sensor-fault">Sensor fault</button><button type="button" id="sensor-missing">Sensor missing</button><button type="button" id="rtc-invalid">Invalid RTC</button><button type="button" id="advance">Advance 15 minutes</button></div>
+            <div class="buttons"><button type="button" id="complete" data-icon="check" aria-describedby="completion-help">Complete update</button><button type="button" id="timeout" data-icon="clock" aria-describedby="completion-help">Simulate panel timeout</button></div>
+            <div class="buttons"><button type="button" id="sensor-fault" data-icon="alert">Sensor fault</button><button type="button" id="sensor-missing" data-icon="alert">Sensor missing</button><button type="button" id="rtc-invalid" data-icon="alert">Invalid RTC</button><button type="button" id="advance" data-icon="clock">Advance 15 minutes</button></div>
           </details>
-          <details><summary>Event recording and replay</summary><label for="events">Event log</label><textarea id="events" rows="8" spellcheck="false"></textarea><div class="buttons"><button type="button" id="record">Show recording</button><button type="button" id="replay">Replay log</button></div></details>
-          <details><summary>Device command and output</summary><form id="device-command-form"><label for="device-command">Device command</label><input id="device-command" type="text" maxlength="220" value="help" required aria-describedby="device-command-help"><p id="device-command-help" class="hint">Enter help for accepted commands.</p><div class="buttons"><button type="submit">Send command</button></div></form><pre id="device-log" aria-label="Device output"></pre></details>
-          <div class="buttons"><button type="button" id="make-palette">Create palette image</button></div>
-          <details><summary>Screen information</summary><pre id="state"></pre></details>
+          <details><summary data-icon="record">Event recording and replay</summary><label for="events" data-icon="record">Event log</label><textarea id="events" rows="8" spellcheck="false"></textarea><div class="buttons"><button type="button" id="record" data-icon="record">Show recording</button><button type="button" id="replay" data-icon="play">Replay log</button></div></details>
+          <details><summary data-icon="terminal">Device command and output</summary><form id="device-command-form"><label for="device-command" data-icon="terminal">Device command</label><input id="device-command" type="text" maxlength="220" value="help" required aria-describedby="device-command-help"><p id="device-command-help" class="hint">Enter help for accepted commands.</p><div class="buttons"><button type="submit" data-icon="send">Send command</button></div></form><pre id="device-log" aria-label="Device output"></pre></details>
+          <div class="buttons"><button type="button" id="make-palette" data-icon="palette">Create palette image</button></div>
+          <details><summary data-icon="info">Screen information</summary><pre id="state"></pre></details>
         </section>
       </div>
     </div>
   </main>
-  <footer><p><a href="./pkg/NOTICE.txt">Notices</a> · <a href="./pkg/LICENSE-MIT.txt">MIT license</a> · <a href="./pkg/LICENSE-APACHE.txt">Apache license</a></p></footer>
   <script type="module">
     import init, { mount } from './pkg/web_preview.js';
     try {
