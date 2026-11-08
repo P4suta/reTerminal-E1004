@@ -95,6 +95,9 @@ Browser checks request an OS-assigned port and read the server's announced addre
 The browser imports generated `wasm-bindgen` glue and runs event handling in Rust.
 Normal preview operation needs no external script, image, font, or network API.
 The browser opens Images, Daily, and Device as separate task workspaces.
+Daily shows one editor for To-do list, Note, or Calendar and places editing before the preview.
+Task rows keep their DOM identity through completion and rendering so keyboard focus and other inline drafts survive updates.
+Every action and field has a named monochrome icon or native state indicator.
 The optional `?tools` address reveals development controls.
 Normal calendar previews read local browser time through the adapter, while tools keep fixed example values.
 Image edits keep an original source and settings per image.
@@ -108,6 +111,8 @@ The status fixture is an executable example of clock, temperature, humidity, bat
 `previous`, `refresh`, and `next` dispatch buttons.
 `screen NAME`, `hold previous`, `hold refresh`, and `hold next` expose direct navigation and contextual controls.
 `task set N TEXT`, `task done N`, `task open N`, `task toggle N`, `task clear N`, `note set TEXT`, and `note clear` edit bounded daily content through the shared core parser.
+`calendar YYYY-MM` selects a validated month, and `calendar today` returns Calendar to the clock's month.
+Browser delivery uses the same calendar command and captures the local date before asynchronous USB work.
 `wait`, `complete`, `timeout`, and `immediate` control display completion.
 `tick MILLISECONDS` supplies monotonic time and `rotation 0` through `rotation 3` select orientation.
 Measurement values accept `unknown`, `missing`, and `fault` as explicit states.

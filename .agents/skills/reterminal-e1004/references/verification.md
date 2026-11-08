@@ -8,7 +8,10 @@ Run `mise x -- just browser` for native button and keyboard operations, field la
 The browser check generates screenshots under `target/screenshots` for visual inspection.
 Image editing checks dispatch every conversion control without a preparation action.
 They compare 42 control combinations with native pixels and cover prepared-file editing, rapid input, invalid input, stale decoding, image switching, removal, and restoration.
+Task list checks exercise direct row actions, capacity, undo conflicts, composition, preserved drafts, focus, calendar navigation, and unsupported USB browsers.
+The browser inventories action and field icons and executes rejecting fixtures for missing, hidden, unnamed, and colored graphics.
 The download check lets Chrome save a file, reads it from disk, and compares its decoded pixels with the native reference.
+It waits for the matching browser download to complete before reading the saved bytes.
 Run `mise x -- just firmware` for offline, Wi-Fi, Bluetooth Low Energy (BLE), and both radio features, including merged 32 MB flash images.
 A cross-compile doesn't verify electrical behavior or radio connectivity.
 `mise x -- just ci host` combines host, dependency, browser, and image-export checks.

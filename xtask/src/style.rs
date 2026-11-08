@@ -137,7 +137,11 @@ impl<'i> DeclarationParser<'i> for StyleCheck {
                 Token::Hash(value) | Token::IDHash(value) => ["000", "000000", "fff", "ffffff"]
                     .contains(&value.to_ascii_lowercase().as_str()),
                 Token::Ident(value) => {
-                    value.eq_ignore_ascii_case("black") || value.eq_ignore_ascii_case("white")
+                    value.eq_ignore_ascii_case("black")
+                        || value.eq_ignore_ascii_case("white")
+                        || (matches!(name.as_str(), "fill" | "stroke")
+                            && (value.eq_ignore_ascii_case("none")
+                                || value.eq_ignore_ascii_case("currentcolor")))
                 }
                 _ => false,
             };

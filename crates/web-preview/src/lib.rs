@@ -4,6 +4,8 @@ use device_core::{
 };
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::prelude::*;
+mod daily;
+mod icons;
 #[cfg(target_arch = "wasm32")]
 mod media;
 mod workspace;
@@ -11,6 +13,7 @@ mod workspace;
 #[wasm_bindgen]
 pub struct WebPreview {
     inner: device_preview::Preview,
+    removed_tasks: Vec<(device_core::daily::TaskId, device_core::daily::Task)>,
 }
 
 #[wasm_bindgen]
@@ -19,6 +22,7 @@ impl WebPreview {
     pub fn new() -> Self {
         Self {
             inner: device_preview::Preview::default(),
+            removed_tasks: Vec::new(),
         }
     }
     pub fn command(&mut self, text: &str) -> Result<(), JsValue> {
@@ -103,14 +107,15 @@ fn update(document: &web_sys::Document, preview: &WebPreview) -> Result<(), JsVa
     element(document, "screen")?
         .dyn_into::<web_sys::HtmlSelectElement>()?
         .set_value(screen);
-    element(document, "refresh")?.set_text_content(Some(match app.middle_label() {
-        "TODAY" => "Today",
-        "DONE" => "Mark done",
-        "REOPEN" => "Reopen task",
-        "START" => "Start slideshow",
-        "PAUSE" => "Pause slideshow",
-        _ => "Refresh",
-    }));
+    let (icon, caption) = match app.middle_label() {
+        "TODAY" => ("calendar", "Today"),
+        "DONE" => ("check", "Mark done"),
+        "REOPEN" => ("undo", "Reopen task"),
+        "START" => ("play", "Start slideshow"),
+        "PAUSE" => ("pause", "Pause slideshow"),
+        _ => ("refresh", "Refresh"),
+    };
+    icons::caption(document, "refresh", icon, caption)?;
     element(document, "gesture-help")?.set_text_content(Some(match app.screen {
         device_core::app::ScreenId::Calendar => "Hold side buttons to browse months. Middle returns to today. Hold middle to measure and refresh.",
         device_core::app::ScreenId::Checklist => "Hold side buttons to select a task. Middle marks it done or reopens it. Hold middle to measure and refresh.",
@@ -152,18 +157,9 @@ fn update(document: &web_sys::Document, preview: &WebPreview) -> Result<(), JsVa
             control.set_attribute("disabled", "")?;
         }
     }
-    update_task_controls(document, preview)?;
-    if matches!(
-        app.screen,
-        device_core::app::ScreenId::Calendar
-            | device_core::app::ScreenId::Checklist
-            | device_core::app::ScreenId::Notes
-    ) {
-        element(document, "daily-screen")?
-            .dyn_into::<web_sys::HtmlSelectElement>()?
-            .set_value(screen);
-    }
-    workspace::refresh(document, preview)
+    daily::refresh(document, preview)?;
+    workspace::refresh(document, preview)?;
+    icons::mount(document)
 }
 
 const MEASUREMENT_FIELDS: [&str; 8] = [
@@ -186,51 +182,9 @@ fn value(document: &web_sys::Document, id: &str) -> Result<String, JsValue> {
     }
 }
 
-fn update_task_controls(
-    document: &web_sys::Document,
-    preview: &WebPreview,
-) -> Result<device_core::daily::Task, JsValue> {
-    let id = value(document, "task-number")?
-        .parse()
-        .ok()
-        .and_then(device_core::daily::TaskId::new)
-        .ok_or_else(|| JsValue::from_str("Choose a task from 1 to 6."))?;
-    let task = preview.inner.app().daily.task(id);
-    element(document, "task-toggle")?.set_text_content(Some(if task.done {
-        "Reopen task"
-    } else {
-        "Mark done"
-    }));
-    for control in ["task-toggle", "task-clear"] {
-        let control = element(document, control)?;
-        if task.text.is_empty() {
-            control.set_attribute("disabled", "")?;
-        } else {
-            control.remove_attribute("disabled")?;
-        }
-    }
-    Ok(task)
-}
-
-fn sync_task(document: &web_sys::Document, preview: &WebPreview) -> Result<(), JsValue> {
-    let task = update_task_controls(document, preview)?;
-    element(document, "task-text")?
-        .dyn_into::<web_sys::HtmlInputElement>()?
-        .set_value(task.text.as_str());
-    Ok(())
-}
-
 fn sync_daily(document: &web_sys::Document, preview: &WebPreview) -> Result<(), JsValue> {
-    for field in ["task-text", "note-text"] {
-        element(document, field)?.remove_attribute("aria-invalid")?;
-        element(document, &format!("{field}-error"))?.set_text_content(None);
-    }
     element(document, "daily-feedback")?.set_text_content(None);
-    sync_task(document, preview)?;
-    element(document, "note-text")?
-        .dyn_into::<web_sys::HtmlInputElement>()?
-        .set_value(preview.inner.app().daily.note().as_str());
-    Ok(())
+    daily::sync(document, preview)
 }
 
 fn clear_validation(document: &web_sys::Document) -> Result<(), JsValue> {
@@ -243,7 +197,7 @@ fn clear_validation(document: &web_sys::Document) -> Result<(), JsValue> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn refresh_local_clock(preview: &mut WebPreview) -> Result<(), JsValue> {
+fn refresh_local_clock(preview: &mut device_preview::Preview) -> Result<(), JsValue> {
     use device_core::telemetry::{DateTime, Sample};
     let date = js_sys::Date::new_0();
     let now = DateTime {
@@ -255,13 +209,15 @@ fn refresh_local_clock(preview: &mut WebPreview) -> Result<(), JsValue> {
         second: date.get_seconds() as u8,
     };
     if !now.valid() {
-        return preview.command("clock unknown");
+        return preview.command("clock unknown").map_err(JsValue::from_str);
     }
-    if !matches!(preview.inner.app().telemetry.clock, Sample::Fresh { value, .. } if value == now) {
-        preview.command(&format!(
-            "clock {:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
-            now.year, now.month, now.day, now.hour, now.minute, now.second
-        ))?;
+    if !matches!(preview.app().telemetry.clock, Sample::Fresh { value, .. } if value == now) {
+        preview
+            .command(&format!(
+                "clock {:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+                now.year, now.month, now.day, now.hour, now.minute, now.second
+            ))
+            .map_err(JsValue::from_str)?;
     }
     Ok(())
 }
@@ -272,42 +228,12 @@ fn apply_daily_drafts(
     preview: &mut WebPreview,
 ) -> Result<device_core::settings::Settings, JsValue> {
     let mut candidate = preview.inner.clone();
-    let task = value(document, "task-text")?;
-    let note = value(document, "note-text")?;
-    let number = value(document, "task-number")?;
-    for (field, command) in [
-        (
-            "task-text",
-            if task.trim().is_empty() {
-                format!("task clear {number}")
-            } else {
-                format!("task set {number} {task}")
-            },
-        ),
-        (
-            "note-text",
-            if note.trim().is_empty() {
-                "note clear".into()
-            } else {
-                format!("note set {note}")
-            },
-        ),
-    ] {
-        element(document, field)?.remove_attribute("aria-invalid")?;
-        element(document, &format!("{field}-error"))?.set_text_content(None);
-        if let Err(message) = candidate.command(&command) {
-            element(document, field)?.set_attribute("aria-invalid", "true")?;
-            element(document, &format!("{field}-error"))?.set_text_content(Some(message));
-            element(document, "daily-feedback")?
-                .set_text_content(Some("Correct the field error before sending."));
-            element(document, field)?
-                .dyn_into::<web_sys::HtmlElement>()?
-                .focus()?;
-            return Err(JsValue::from_str(message));
-        }
+    if daily::screen(document)? == "calendar" && !workspace::tools_enabled()? {
+        refresh_local_clock(&mut candidate)?;
     }
+    daily::apply_drafts(document, &mut candidate)?;
     candidate
-        .command(&format!("screen {}", value(document, "daily-screen")?))
+        .command(&format!("screen {}", daily::screen(document)?))
         .map_err(JsValue::from_str)?;
     preview.inner = candidate;
     sync_daily(document, preview)?;
@@ -328,8 +254,9 @@ pub fn mount() -> Result<(), JsValue> {
         .map_err(|e| JsValue::from_str(e.message()))?;
     #[cfg(target_arch = "wasm32")]
     if !workspace::tools_enabled()? {
-        refresh_local_clock(&mut preview.borrow_mut())?;
+        refresh_local_clock(&mut preview.borrow_mut().inner)?;
     }
+    daily::mount(&document, &preview)?;
     update(&document, &preview.borrow())?;
     sync_daily(&document, &preview.borrow())?;
     workspace::mount(document.clone(), Rc::clone(&preview))?;
@@ -341,16 +268,9 @@ pub fn mount() -> Result<(), JsValue> {
         ("refresh", "click", "refresh"),
         ("next", "click", "next"),
         ("screen", "change", "screen"),
-        ("daily-screen", "change", "daily-screen"),
         ("hold-previous", "click", "hold previous"),
         ("hold-refresh", "click", "hold refresh"),
         ("hold-next", "click", "hold next"),
-        ("task-editor", "submit", "task-save"),
-        ("task-number", "change", "task-number"),
-        ("task-toggle", "click", "task-toggle"),
-        ("task-clear", "click", "task-clear"),
-        ("note-editor", "submit", "note-save"),
-        ("note-clear", "click", "note-clear"),
         ("wait", "change", "wait"),
         ("complete", "click", "complete"),
         ("immediate", "change", "immediate"),
@@ -382,60 +302,6 @@ pub fn mount() -> Result<(), JsValue> {
                 match action {
                     "screen" => {
                         preview.command(&format!("screen {}", value(&document, "screen")?))?
-                    }
-                    "daily-screen" => {
-                        preview.command(&format!("screen {}", value(&document, "daily-screen")?))?
-                    }
-                    "task-number" => sync_task(&document, &preview)?,
-                    "task-save" | "task-toggle" | "task-clear" | "note-save" | "note-clear" => {
-                        let field = if action.starts_with("task-") {
-                            "task-text"
-                        } else {
-                            "note-text"
-                        };
-                        let number = value(&document, "task-number")?;
-                        let command = match action {
-                            "task-save" => {
-                                format!("task set {number} {}", value(&document, "task-text")?)
-                            }
-                            "task-toggle" => format!("task toggle {number}"),
-                            "task-clear" => format!("task clear {number}"),
-                            "note-save" => {
-                                let note = value(&document, "note-text")?;
-                                if note.trim().is_empty() {
-                                    "note clear".into()
-                                } else {
-                                    format!("note set {note}")
-                                }
-                            }
-                            _ => "note clear".into(),
-                        };
-                        element(&document, field)?.remove_attribute("aria-invalid")?;
-                        element(&document, &format!("{field}-error"))?.set_text_content(None);
-                        if let Err(message) = preview.inner.command(&command) {
-                            invalid_field = Some(device_preview::InputError::new(field, message));
-                            return Err(JsValue::from_str(message));
-                        }
-                        preview.command(if field == "task-text" {
-                            "screen checklist"
-                        } else {
-                            "screen notes"
-                        })?;
-                        if field == "task-text" {
-                            sync_task(&document, &preview)?;
-                        }
-                        element(&document, "daily-feedback")?.set_text_content(Some(
-                            if field == "task-text" {
-                                "Checklist updated."
-                            } else {
-                                "Note updated."
-                            },
-                        ));
-                        if field == "note-text" {
-                            element(&document, "note-text")?
-                                .dyn_into::<web_sys::HtmlInputElement>()?
-                                .set_value(preview.inner.app().daily.note().as_str());
-                        }
                     }
                     "apply" | "validate" | "invalid" => {
                         clear_validation(&document)?;
@@ -485,6 +351,7 @@ pub fn mount() -> Result<(), JsValue> {
                             .apply_measurements(&device_preview::MeasurementInputs::default())
                             .map_err(|e| JsValue::from_str(e.message()))?;
                         preview.inner = example;
+                        preview.removed_tasks.clear();
                         sync_daily(&document, &preview)?;
                     }
                     "rotation" => {
@@ -509,6 +376,7 @@ pub fn mount() -> Result<(), JsValue> {
                             .dyn_into::<web_sys::HtmlTextAreaElement>()?
                             .value();
                         preview.replay(&log)?;
+                        preview.removed_tasks.clear();
                         sync_daily(&document, &preview)?;
                     }
                     command => preview.command(command)?,

@@ -422,7 +422,7 @@ fn daily_content_selection_and_calendar_survive_console_editing_sleep_and_restar
                 == screen
                 && app.daily.note().as_str() == "Return the library books.")));
         if screen == ScreenId::Calendar {
-            board.command("hold next");
+            board.command("calendar 2028-02");
         }
         if screen == ScreenId::Checklist {
             for _ in 0..5 {
@@ -438,7 +438,10 @@ fn daily_content_selection_and_calendar_survive_console_editing_sleep_and_restar
         assert_eq!(expected.rotation, 3);
         assert_eq!(expected.daily.counts(), (1, 2));
         if screen == ScreenId::Calendar {
-            assert!(expected.calendar_month.is_some());
+            assert_eq!(
+                expected.calendar_month,
+                device_core::calendar::Month::new(2028, 2)
+            );
         }
         if screen == ScreenId::Checklist {
             assert_eq!(expected.selected_task.number(), 6);

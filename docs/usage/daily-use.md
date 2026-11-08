@@ -35,6 +35,8 @@ task set 2 Return library books
 task done 1
 note set Pack lunch and take the umbrella.
 screen checklist
+calendar 2028-02
+calendar today
 ```
 
 Task text accepts 1 through 48 printable ASCII characters.
@@ -43,6 +45,7 @@ The parser rejects unsupported characters, control characters, and out-of-range 
 The shared font supports English text.
 
 Use `task open 1`, `task toggle 1`, or `task clear 1` to change an entry.
+Use `calendar YYYY-MM` to select a month and open Calendar, or `calendar today` to follow the device clock.
 Use `note clear` to remove the note.
 Use `note set clear` to save the literal word `clear`.
 `screen` accepts `status`, `calendar`, `checklist`, `notes`, `diagnostics`, `drawing`, and `gallery`.
@@ -65,11 +68,30 @@ A settings failure appears as `SettingsStorage` in diagnostics and console outpu
 
 Run `mise x -- just web` to open the browser preview at the printed address.
 Open the Daily workspace to edit the checklist and note or preview the calendar.
-Choose Save task or Save note to update the preview.
-Send to display validates both drafts before applying and sending the content.
+Choose To-do list, Note, or Calendar to show its editor.
+Enter a task, then press Enter.
+Each task has a checkbox, an Edit pencil, and a Delete trash icon.
+Use Space on a checkbox to complete or reopen its task.
+Save an inline edit with Enter or choose Save, and cancel with Escape or Cancel.
+Undo restores deleted tasks, including their completion states, while the original positions remain available.
+Clear completed removes completed tasks together.
+The list holds six tasks.
+The addition form disappears when the list is full.
+Unfinished additions, inline edits, and note drafts survive workspace changes.
+Choose Save note to update the note preview, or Discard changes to return to its saved text.
+Send to display validates every pending task and note draft before applying and sending the content.
+Edits made during sending remain in the editor, with a message asking for another send.
 The calendar preview uses the computer's local date.
+Previous month, Next month, and Today navigate the calendar.
+Sending a calendar also sets the display clock to the captured local date and time and selects the shown month.
 Invalid input preserves the current state, displayed image, and recording.
 The preview runs locally and sends no daily content to a service.
+
+Actions and fields use monochrome icons with text labels or names for assistive technology.
+Task editing and deletion use named icon buttons beside their task.
+Native checkboxes and radio buttons keep their standard state indicators.
+The app explains unavailable USB sending beside the send action.
+The calendar keeps its weekday relationships in a table that supports horizontal keyboard scrolling when enlarged text needs extra space.
 
 Add `?tools` to the app address to reveal simulated measurements, held-button controls, and event recording.
 The held-button controls perform the same gestures as the device.

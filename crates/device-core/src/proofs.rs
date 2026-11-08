@@ -151,6 +151,56 @@ use crate::{
 };
 
 #[kani::proof]
+#[kani::unwind(9)]
+fn direct_calendar_month_parser_and_selection_preserve_the_domain() {
+    let bytes: [u8; 7] = kani::any();
+    if let Ok(text) = core::str::from_utf8(&bytes) {
+        let digits = [bytes[0], bytes[1], bytes[2], bytes[3], bytes[5], bytes[6]]
+            .into_iter()
+            .all(|digit| digit.is_ascii_digit());
+        let year = u32::from(bytes[0].wrapping_sub(b'0')) * 1000
+            + u32::from(bytes[1].wrapping_sub(b'0')) * 100
+            + u32::from(bytes[2].wrapping_sub(b'0')) * 10
+            + u32::from(bytes[3].wrapping_sub(b'0'));
+        let number =
+            u32::from(bytes[5].wrapping_sub(b'0')) * 10 + u32::from(bytes[6].wrapping_sub(b'0'));
+        let valid = digits
+            && bytes[4] == b'-'
+            && (2000..=2099).contains(&year)
+            && (1..=12).contains(&number);
+        let month = Month::parse(text);
+        assert_eq!(month.is_some(), valid);
+        if let Some(month) = month {
+            assert_eq!(u32::from(month.year()), year);
+            assert_eq!(u32::from(month.number()), number);
+            kani::cover!(month.year() == 2000 && month.number() == 1);
+            kani::cover!(month.year() == 2099 && month.number() == 12);
+        }
+        kani::cover!(!valid);
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(161)]
+fn direct_calendar_selection_preserves_other_daily_content() {
+    let year: u16 = kani::any();
+    let number: u8 = kani::any();
+    let today: bool = kani::any();
+    if let Some(month) = Month::new(year, number) {
+        let selected = (!today).then_some(month);
+        let app = App::default();
+        let changed = app
+            .transition(AppEvent::SelectCalendarMonth(selected))
+            .state;
+        assert_eq!(changed.screen, crate::app::ScreenId::Calendar);
+        assert_eq!(changed.calendar_month, selected);
+        assert_eq!(changed.daily, app.daily);
+        kani::cover!(today);
+        kani::cover!(!today);
+    }
+}
+
+#[kani::proof]
 #[kani::unwind(3)]
 fn calendar_cells_and_navigation_are_bounded() {
     let year: u16 = kani::any();

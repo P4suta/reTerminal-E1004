@@ -29,6 +29,24 @@ pub const MONTH_NAMES: [&str; 12] = [
 ];
 
 impl Month {
+    /// Parses an exact `YYYY-MM` month between 2000 and 2099.
+    pub fn parse(value: &str) -> Option<Self> {
+        let [a, b, c, d, b'-', m, n] = value.as_bytes() else {
+            return None;
+        };
+        if ![a, b, c, d, m, n]
+            .into_iter()
+            .all(|digit| digit.is_ascii_digit())
+        {
+            return None;
+        }
+        let year = u16::from(*a - b'0') * 1000
+            + u16::from(*b - b'0') * 100
+            + u16::from(*c - b'0') * 10
+            + u16::from(*d - b'0');
+        Self::new(year, (*m - b'0') * 10 + (*n - b'0'))
+    }
+
     pub fn new(year: u16, month: u8) -> Option<Self> {
         ((2000..=2099).contains(&year) && (1..=12).contains(&month)).then_some(Self { year, month })
     }

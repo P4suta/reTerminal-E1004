@@ -41,6 +41,10 @@ fn static_server_exposes_only_preview_assets() {
 fn monochrome_design_gate_rejects_prohibited_styles() {
     assert!(monochrome(".field-error:empty, #error:empty { display: none; color: #000; }").is_ok());
     assert!(monochrome("body { color: #000; background: #fff; }").is_ok());
+    assert!(monochrome(
+        "svg { fill: none; stroke: currentColor; } path { fill: currentColor; stroke: none; }"
+    )
+    .is_ok());
     assert!(monochrome(".red, #pink { color: black; font-family: red; width: calc(100% - 2px); opacity: 1; box-shadow: none; text-shadow: none; filter: none; backdrop-filter: none; mix-blend-mode: normal; background-blend-mode: normal; }").is_ok());
     assert!(monochrome(
         "@media (min-width: 320px) { #first:hover, #second:focus { border: 2px solid black; } }"
@@ -62,6 +66,10 @@ fn monochrome_design_gate_rejects_prohibited_styles() {
         "a {border-left-color: rebeccapurple;}",
         "a {background: RGB(128,128,128);}",
         "a {border: 1px solid oklch(50% 0 0);}",
+        "svg {fill: red;}",
+        "svg {stroke: #777;}",
+        "svg {stroke: rgba(0,0,0,.5);}",
+        "body {color: none;}",
     ] {
         assert!(monochrome(css).is_err(), "{css}");
     }

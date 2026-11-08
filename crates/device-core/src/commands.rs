@@ -1,5 +1,6 @@
 use crate::{
     app::{AppEvent, Button, ScreenId},
+    calendar::Month,
     daily::{DailyEdit, TaskId, Text},
     geometry::Rotation,
 };
@@ -7,6 +8,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeviceCommand {
     Screen(ScreenId),
+    Calendar(Option<Month>),
     Hold(Button),
     Edit(DailyEdit),
     Rotation(Rotation),
@@ -18,6 +20,7 @@ impl DeviceCommand {
     pub fn into_event(self) -> Result<AppEvent, Rotation> {
         Ok(match self {
             Self::Screen(screen) => AppEvent::SelectScreen(screen),
+            Self::Calendar(month) => AppEvent::SelectCalendarMonth(month),
             Self::Hold(button) => AppEvent::Hold(button),
             Self::Edit(edit) => AppEvent::EditDaily(edit),
             Self::Rotation(rotation) => return Err(rotation),
@@ -33,6 +36,15 @@ pub fn parse(line: &str) -> Option<Result<DeviceCommand, &'static str>> {
         "screen" => ScreenId::parse(value)
             .map(DeviceCommand::Screen)
             .ok_or("Choose status, calendar, checklist, notes, diagnostics, drawing, or gallery."),
+        "calendar" => {
+            if value == "today" {
+                Ok(DeviceCommand::Calendar(None))
+            } else {
+                Month::parse(value)
+                    .map(|month| DeviceCommand::Calendar(Some(month)))
+                    .ok_or("Choose calendar today or calendar YYYY-MM between 2000 and 2099.")
+            }
+        }
         "awake" => value
             .parse::<u32>()
             .ok()
