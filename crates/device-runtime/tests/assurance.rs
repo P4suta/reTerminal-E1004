@@ -23,11 +23,11 @@ fn measurement_model() -> u64 {
             word /= EVENT_KINDS;
             let event = match symbol {
                 0 => {
-                    screen = (screen + 1) % 3;
+                    screen = (screen + 1) % 6;
                     AppEvent::Button(Button::Next)
                 }
                 1 => {
-                    screen = (screen + 2) % 3;
+                    screen = (screen + 5) % 6;
                     AppEvent::Button(Button::Previous)
                 }
                 2 => AppEvent::Button(Button::Refresh),
@@ -102,7 +102,14 @@ fn measurement_model() -> u64 {
             }
             assert_eq!(
                 next.state.screen,
-                [ScreenId::Status, ScreenId::Diagnostics, ScreenId::Drawing][screen]
+                [
+                    ScreenId::Status,
+                    ScreenId::Calendar,
+                    ScreenId::Checklist,
+                    ScreenId::Notes,
+                    ScreenId::Diagnostics,
+                    ScreenId::Drawing
+                ][screen]
             );
             app = next.state;
             transitions += 1;

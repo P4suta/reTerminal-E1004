@@ -7,6 +7,9 @@ pub struct Debouncer {
 }
 
 impl Debouncer {
+    pub const fn pressed(&self) -> bool {
+        self.stable_pressed
+    }
     pub fn update(&mut self, pressed: bool) -> bool {
         if pressed == self.stable_pressed {
             self.count = 0;
@@ -19,6 +22,53 @@ impl Debouncer {
             return pressed;
         }
         false
+    }
+}
+
+pub const HOLD_MS: u64 = 800;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GestureEvent {
+    Tap,
+    Hold,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Gesture {
+    debounce: Debouncer,
+    started_ms: Option<u64>,
+    held: bool,
+}
+
+impl Gesture {
+    pub const fn is_idle(&self) -> bool {
+        self.started_ms.is_none()
+    }
+
+    pub fn update(&mut self, pressed: bool, now_ms: u64) -> Option<GestureEvent> {
+        let was_pressed = self.debounce.pressed();
+        self.debounce.update(pressed);
+        if self.debounce.pressed() && !was_pressed {
+            self.started_ms = Some(now_ms);
+            self.held = false;
+        }
+        if !self.debounce.pressed() && was_pressed {
+            self.started_ms = None;
+            return if self.held {
+                None
+            } else {
+                Some(GestureEvent::Tap)
+            };
+        }
+        if !self.held
+            && self
+                .started_ms
+                .is_some_and(|started| now_ms.saturating_sub(started) >= HOLD_MS)
+        {
+            self.held = true;
+            return Some(GestureEvent::Hold);
+        }
+        None
     }
 }
 

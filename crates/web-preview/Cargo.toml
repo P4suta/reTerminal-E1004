@@ -13,12 +13,15 @@ crate-type = ["cdylib", "rlib"]
 device-core = { path = "../device-core" }
 device-preview = { path = "../preview" }
 wasm-bindgen = "=0.2.130"
+js-sys = "=0.3.107"
+qrcodegen = "=1.8.0"
 web-sys = { version = "=0.3.107", features = [
   "Window",
   "Document",
   "HtmlCanvasElement",
   "CanvasRenderingContext2d",
   "ImageData",
+  "TextMetrics",
   "HtmlElement",
   "HtmlFormElement",
   "HtmlInputElement",
@@ -26,6 +29,26 @@ web-sys = { version = "=0.3.107", features = [
   "HtmlTextAreaElement",
   "Event",
   "EventTarget",
+  "KeyboardEvent",
+  "Location",
+  "Blob",
+  "File",
+  "FileList",
+  "ImageBitmap",
+  "HtmlAnchorElement",
+  "Url",
+  "Navigator",
+] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "=0.3.107", features = [
+  "Serial",
+  "SerialPort",
+  "SerialOptions",
+  "ReadableStream",
+  "ReadableStreamDefaultReader",
+  "WritableStream",
+  "WritableStreamDefaultWriter",
 ] }
 
 [lints]

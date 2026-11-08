@@ -7,8 +7,9 @@ check:
 ci profile="host":
     cargo run --locked -p xtask -- ci {{ profile }}
 
+[positional-arguments]
 sim *args:
-    cargo run --locked -p xtask -- sim {{ args }}
+    cargo run --locked -p xtask -- sim "$@"
 
 web:
     cargo run --locked -p xtask -- web

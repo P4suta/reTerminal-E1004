@@ -42,7 +42,9 @@ fn flash_addresses_are_bounded_and_sectors_are_disjoint() {
     let offset: usize = kani::any();
     let length: usize = kani::any();
     let result = crate::storage::settings_address(slot, offset, length);
-    let valid = slot < 2 && offset < 24 && (offset as u128) + (length as u128) <= 24;
+    let valid = slot < 2
+        && offset < device_core::settings::SLOT_BYTES
+        && (offset as u128) + (length as u128) <= device_core::settings::SLOT_BYTES as u128;
     assert_eq!(result.is_ok(), valid);
     if let Ok(address) = result {
         assert_eq!(
@@ -107,6 +109,26 @@ fn stable_button_never_repeats_a_press() {
 }
 
 #[kani::proof]
+#[kani::unwind(4)]
+fn held_button_emits_once_and_never_becomes_a_tap() {
+    use crate::input::{Gesture, GestureEvent, HOLD_MS};
+    let mut gesture = Gesture::default();
+    assert!(gesture.is_idle());
+    for now in [0, 20, 40] {
+        assert_eq!(gesture.update(true, now), None);
+    }
+    assert_eq!(gesture.update(true, 40 + HOLD_MS), Some(GestureEvent::Hold));
+    assert!(!gesture.is_idle());
+    let later: u64 = kani::any();
+    kani::assume(later >= 40 + HOLD_MS);
+    assert_eq!(gesture.update(true, later), None);
+    for now in [later, later, later] {
+        assert_eq!(gesture.update(false, now), None);
+    }
+    assert!(gesture.is_idle());
+}
+
+#[kani::proof]
 #[kani::unwind(20)]
 fn sensor_words_convert_without_overflow() {
     let raw: [u8; 4] = kani::any();
@@ -146,4 +168,28 @@ fn calendar_round_trip_preserves_all_valid_fields() {
     invalid[0] |= 0x80;
     assert_eq!(rtc_decode(invalid), Err(Fault::InvalidRtc));
     kani::cover!(time.month == 2 && time.day == 29);
+}
+#[kani::proof]
+fn image_flash_addresses_stay_in_the_reserved_partition() {
+    use crate::media::{media_address, MEDIA_BASE, MEDIA_SLOT_BYTES};
+    use device_core::media::PhysicalSlot;
+    let index: u8 = kani::any();
+    kani::assume(index < 9);
+    let slot = PhysicalSlot::new(index).unwrap();
+    let offset: u32 = kani::any();
+    let length: u32 = kani::any();
+    let result = media_address(slot, offset as usize, length as usize);
+    assert_eq!(
+        result.is_ok(),
+        u64::from(offset) + u64::from(length) <= u64::from(MEDIA_SLOT_BYTES)
+    );
+    if let Ok(address) = result {
+        assert!(address >= MEDIA_BASE);
+        assert!(
+            u64::from(address) + u64::from(length)
+                <= u64::from(MEDIA_BASE) + 9 * u64::from(MEDIA_SLOT_BYTES)
+        );
+    }
+    kani::cover!(result.is_ok());
+    kani::cover!(result.is_err());
 }

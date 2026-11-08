@@ -1,7 +1,7 @@
 use embedded_sdmmc::{Block, BlockCount, BlockDevice, BlockIdx, TimeSource, Timestamp};
 use std::{
     cell::{Cell, RefCell},
-    io::{self, Cursor, Read},
+    io::{self, Cursor, Read, Write},
 };
 
 struct Disk {
@@ -95,6 +95,41 @@ fn fat32_writes_are_readable_by_an_independent_filesystem_and_removal_is_an_erro
     drop(file);
     drop(volume);
     drop(bytes);
+    let payload = vec![0x66; device_core::geometry::FRAME_BYTES];
+    {
+        let mut bytes = disk.bytes.borrow_mut();
+        let volume =
+            fatfs::FileSystem::new(Cursor::new(&mut bytes[start..]), fatfs::FsOptions::new())
+                .unwrap();
+        let root = volume.root_dir();
+        let mut file = root.create_file("IMAGE3.EPD").unwrap();
+        let record = device_core::media::ImageRecord::image(
+            device_core::media::ImageId::new(3).unwrap(),
+            0,
+            device_core::geometry::Rotation::Portrait,
+            device_core::settings::crc32(&payload),
+        );
+        file.write_all(&record.encode()).unwrap();
+        file.write_all(&payload).unwrap();
+    }
+    let mut pixels = vec![0; payload.len()];
+    let yielded = Cell::new(0);
+    let operation = e1004_bsp::fat::read_image(
+        &disk,
+        Clock,
+        device_core::media::ImageId::new(3).unwrap(),
+        &mut pixels,
+        || {
+            yielded.set(yielded.get() + 1);
+            core::future::ready(())
+        },
+    );
+    let result = std::pin::pin!(operation)
+        .as_mut()
+        .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()));
+    assert!(matches!(result, std::task::Poll::Ready(Ok(_))));
+    assert_eq!(pixels, payload);
+    assert!(yielded.get() > 200);
     let original = disk.bytes.borrow().clone();
     disk.writes.set(0);
     e1004_bsp::fat::diagnostic(&disk, Clock).unwrap();
@@ -114,4 +149,16 @@ fn fat32_writes_are_readable_by_an_independent_filesystem_and_removal_is_an_erro
     }
     disk.removed.set(true);
     assert!(e1004_bsp::fat::diagnostic(&disk, Clock).is_err());
+    let operation = e1004_bsp::fat::read_image(
+        &disk,
+        Clock,
+        device_core::media::ImageId::new(3).unwrap(),
+        &mut pixels,
+        || core::future::ready(()),
+    );
+    let result = std::pin::pin!(operation)
+        .as_mut()
+        .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()));
+    assert!(matches!(result, std::task::Poll::Ready(Err(_))));
 }
+use core::future::Future;

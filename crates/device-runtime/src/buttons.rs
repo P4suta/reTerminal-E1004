@@ -3,7 +3,7 @@ use crate::{
     state::{LogRecord, System},
 };
 use device_core::app::{AppEvent, Button};
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 
 const BUTTON_COUNT: usize = 3;
 const BUTTON_POLL_MS: u64 = 20;
@@ -14,10 +14,12 @@ pub trait ButtonsIo {
 }
 
 pub async fn buttons_loop(system: &System, mut io: impl ButtonsIo) {
-    let mut debounce = [e1004_bsp::input::Debouncer::default(); BUTTON_COUNT];
+    let mut gestures = [e1004_bsp::input::Gesture::default(); BUTTON_COUNT];
     loop {
         if let Some(arm) = system.button_sleep.try_take() {
-            let mut can_arm = arm && (0..BUTTON_COUNT).all(|index| io.is_high(index));
+            let mut can_arm = arm
+                && (0..BUTTON_COUNT).all(|index| io.is_high(index))
+                && gestures.iter().all(e1004_bsp::input::Gesture::is_idle);
             for index in 0..BUTTON_COUNT {
                 if io.wake(index, can_arm).is_err() {
                     can_arm = false;
@@ -39,8 +41,14 @@ pub async fn buttons_loop(system: &System, mut io: impl ButtonsIo) {
             .into_iter()
             .enumerate()
         {
-            if debounce[index].update(!io.is_high(index)) {
-                system.events.send(AppEvent::Button(button)).await;
+            if let Some(gesture) =
+                gestures[index].update(!io.is_high(index), Instant::now().as_millis())
+            {
+                let event = match gesture {
+                    e1004_bsp::input::GestureEvent::Tap => AppEvent::Button(button),
+                    e1004_bsp::input::GestureEvent::Hold => AppEvent::Hold(button),
+                };
+                system.events.send(event).await;
             }
         }
         Timer::after_millis(BUTTON_POLL_MS).await;

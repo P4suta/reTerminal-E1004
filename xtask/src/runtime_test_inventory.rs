@@ -1,4 +1,9 @@
 pub const CASES: &[&str] = &[
+    "automatic_gallery_restarts_advance_without_rewriting_flash_preferences",
+    "a_late_image_storage_reply_cannot_acknowledge_a_new_command",
+    "an_unreadable_gallery_index_does_not_replace_a_retained_panel_image",
+    "browser_control_commits_color_images_and_recovers_interrupted_transfers_through_production_tasks",
+    "daily_content_selection_and_calendar_survive_console_editing_sleep_and_restart",
     "switching_resume_policy_saves_the_active_screen_without_an_extra_sleep_write",
     "failed_screen_retention_is_reported_once_and_preserves_a_committed_screen",
     "rapid_measurement_and_navigation_requests_coalesce_before_sleep",
@@ -9,6 +14,7 @@ pub const CASES: &[&str] = &[
     "ble_can_restart_after_releasing_its_controller",
     "ble_uses_both_fresh_and_stale_validated_battery_values_without_a_new_measurement",
     "physical_active_low_buttons_emit_one_event_only_after_a_stable_press",
+    "sleep_arming_waits_for_each_button_release_to_finish_gesture_classification",
     "a_console_quiet_acknowledgment_prevents_later_writes_until_a_new_flush_barrier",
     "a_rejected_hardware_sleep_rearms_and_retries",
     "a_stalled_adc_and_missing_sensor_still_leave_the_console_and_sleep_operational",

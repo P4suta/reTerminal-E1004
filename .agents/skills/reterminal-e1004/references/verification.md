@@ -2,10 +2,13 @@
 
 ## Fast gate
 
-Run `mise x -- just check` for format, strict Clippy, all-feature host tests, the Wasm build, source inventory, and design checks.
+Run `mise x -- just check` for format, strict host and Wasm Clippy, all-feature host tests, the Wasm build, source inventory, and design checks.
 The gate compares Cargo's actual firmware-task test inventory with the required case registry before running the tests.
 Run `mise x -- just browser` for native button and keyboard operations, field labels, computed styles, replay, narrow layout, and matching native/Wasm frame digests.
 The browser check generates screenshots under `target/screenshots` for visual inspection.
+Image editing checks dispatch every conversion control without a preparation action.
+They compare 42 control combinations with native pixels and cover prepared-file editing, rapid input, invalid input, stale decoding, image switching, removal, and restoration.
+The download check lets Chrome save a file, reads it from disk, and compares its decoded pixels with the native reference.
 Run `mise x -- just firmware` for offline, Wi-Fi, Bluetooth Low Energy (BLE), and both radio features, including merged 32 MB flash images.
 A cross-compile doesn't verify electrical behavior or radio connectivity.
 `mise x -- just ci host` combines host, dependency, browser, and image-export checks.
@@ -68,7 +71,7 @@ Each step must return no follow-up event.
 Host sequence tests exercise the complete drain loop.
 Core proofs also check measurement admission, component-specific settings faults, saved-screen projection, and format 1 compatibility.
 Runtime proofs check sleep admission across every quiet boundary, emitted sleep actions, display generations, charger bits, owned packet reservations, and boot recovery with independent slot-read failures.
-The boot proof makes failed reads write valid-looking newer records before returning an error and checks that the runtime discards those bytes.
+The boot proof quantifies arbitrary bytes written by failed reads and checks that the runtime discards those bytes.
 The pinned panel source specifies `BUSY` high as ready.
 Software must use and test that specified polarity before device delivery.
 Physical acceptance checks the delivered board's signals and measured sensor accuracy.
@@ -103,7 +106,27 @@ Neither fuzzing nor Miri establishes a theorem for unexecuted inputs or hardware
 
 Separate published requirements, executed software checks, and measurements from the delivered unit.
 Host tests execute the production firmware task graph from boot through measurement, console input, display transfer, persistence, quiescence, and restart.
-The matrix combines all four radio configurations, four rotations, and three screens.
+The matrix combines all four radio configurations, four rotations, and seven screens.
+The daily content task test enters commands through the console, saves before sleep, restarts production tasks, and checks content and interaction positions.
+Calendar tests compare every month in the real-time clock century with an independent day count.
+Daily settings tests reject every partial record and single-bit corruption of a full record.
+The host gate executes the real `just sim` boundary with spaces in commands and filenames and punctuation in note text.
+Earlier checks called preview APIs directly and didn't observe shell argument splitting.
+Keep the command-boundary check alongside shared parser tests.
+Unassigned held side presses must leave app state untouched.
+The core gesture test rejects an unnecessary refresh on screens without a held side action.
+Gesture classification tests alone didn't check that app contract.
+Sleep arming waits for gesture classification to finish after a physical release.
+The task test checks all three buttons after taps and holds, including the release debounce interval.
+Earlier tests checked input events and sleep independently, leaving the release boundary uncovered.
+Save acknowledgements preserve content even after an edit returns to its earlier saved value.
+The configuration task test sends interval and rotation changes in one console burst and checks their combined result after restart.
+Earlier tests checked separate commands and edits with different contents, leaving both ordering cases uncovered.
+Note entry preserves literal command words such as `clear` through explicit `note set TEXT` commands.
+Shared parser and browser tests distinguish setting text from deletion.
+Earlier tests used ordinary sentences and missed the collision between content and command syntax.
+Boot proofs quantify arbitrary bytes written by failed reads and use format 2 records for readable slots.
+Formats 3 and 4 have core codec coverage and host restart tests.
 The model uses delayed operations and real Embassy wake notifications rather than polling every future unconditionally.
 The real Trouble Host processes modeled controller packets and central requests.
 Wi-Fi tests check controller operations, bounded failure, and resource release under the SDK peripheral contract.

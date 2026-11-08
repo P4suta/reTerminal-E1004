@@ -1,0 +1,15 @@
+screen calendar
+hold next
+hold previous
+task set 1 Buy groceries
+task set 6 Return library books
+task done 1
+task open 1
+task toggle 6
+task clear 6
+note set Pack lunch and take the umbrella.
+note set clear
+note clear
+screen checklist
+screen notes
+task set 7 invalid

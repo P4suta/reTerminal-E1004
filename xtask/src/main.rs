@@ -8,8 +8,6 @@ use std::{
 use xtask::{monochrome, web_path, FirmwareFeatures};
 
 type TaskResult = Result<(), Box<dyn Error + Send + Sync>>;
-const PREVIEW_HOST: &str = "127.0.0.1";
-const PREVIEW_SCHEME: &str = "http://";
 const PREVIEW_PORT: u16 = 8080;
 const NOT_FOUND_STATUS: u16 = 404;
 mod dependencies;
@@ -50,12 +48,18 @@ fn web_build() -> TaskResult {
             "web/pkg",
             "target/wasm32-unknown-unknown/release/web_preview.wasm",
         ],
-    )
+    )?;
+    for name in ["NOTICE", "LICENSE-MIT", "LICENSE-APACHE"] {
+        fs::copy(name, format!("web/pkg/{name}.txt"))?;
+    }
+    Ok(())
 }
 
 fn serve(port: u16) -> TaskResult {
-    let server = tiny_http::Server::http((PREVIEW_HOST, port))?;
-    println!("Preview: {PREVIEW_SCHEME}{PREVIEW_HOST}:{port}");
+    let listener = xtask::preview_server::bind(port)?;
+    let address = listener.local_addr()?;
+    let server = tiny_http::Server::from_listener(listener, None)?;
+    println!("Preview: http://{address}");
     for request in server.incoming_requests() {
         let path = web_path(request.url());
         let bytes = path.as_ref().and_then(|path| fs::read(path).ok());
@@ -67,6 +71,7 @@ fn serve(port: u16) -> TaskResult {
                 Some("wasm") => "application/wasm",
                 Some("js") => "text/javascript",
                 Some("css") => "text/css",
+                Some("txt") => "text/plain; charset=utf-8",
                 _ => "text/html; charset=utf-8",
             };
             tiny_http::Response::from_data(bytes)
@@ -213,6 +218,67 @@ fn firmware(features: FirmwareFeatures, operation: FirmwareOperation) -> TaskRes
     Ok(())
 }
 
+fn check_preview_arguments() -> TaskResult {
+    const FRAME: &str = "target/preview arguments.raw";
+    let commands = [
+        "task set 1 Buy groceries",
+        "note set Library books & lunch.",
+        "screen checklist",
+    ];
+    let mut command = Command::new("just");
+    command.args(["sim", "--raw", FRAME]);
+    for event in commands {
+        command.args(["--event", event]);
+    }
+    let output = command.output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "preview entrypoint failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    let mut expected = device_preview::Preview::default();
+    for event in commands {
+        expected.command(event)?;
+    }
+    if std::fs::read(FRAME)? != expected.frame() {
+        return Err("preview entrypoint changed argument bytes".into());
+    }
+    let rejected = Command::new("just")
+        .args(["sim", "--raw", FRAME, "--event", "task set 7 invalid"])
+        .output()?;
+    if rejected.status.success()
+        || !String::from_utf8_lossy(&rejected.stderr).contains("Choose a task number from 1 to 6.")
+    {
+        return Err("preview entrypoint did not preserve an input rejection".into());
+    }
+    println!("Preview entrypoint preserves spaces, punctuation, filenames, and rejected input");
+    let pixels = vec![0x55; device_core::geometry::FRAME_BYTES];
+    let mut image = device_core::media::ImageRecord::image(
+        device_core::media::ImageId::default(),
+        0,
+        device_core::geometry::Rotation::Portrait,
+        device_core::settings::crc32(&pixels),
+    )
+    .encode()
+    .to_vec();
+    image.extend_from_slice(&pixels);
+    const IMAGE: &str = "target/preview image.EPD";
+    fs::write(IMAGE, &image)?;
+    let output = Command::new("just")
+        .args(["sim", "--image", IMAGE, "--raw", FRAME])
+        .output()?;
+    if !output.status.success() || fs::read(FRAME)? != pixels {
+        return Err(format!(
+            "prepared image preview failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn execute() -> TaskResult {
     let mut arguments = std::env::args().skip(1);
     let task = arguments.next().ok_or("expected check, sim, web, web-build, firmware, flash, monitor, docs, proofs, mutations, fuzz, miri, or assurance")?;
@@ -310,6 +376,21 @@ fn execute() -> TaskResult {
             run(
                 "cargo",
                 &["test", "--locked", "--workspace", "--all-features"],
+            )?;
+            check_preview_arguments()?;
+            run(
+                "cargo",
+                &[
+                    "clippy",
+                    "--locked",
+                    "-p",
+                    "web-preview",
+                    "--target",
+                    "wasm32-unknown-unknown",
+                    "--",
+                    "-D",
+                    "warnings",
+                ],
             )?;
             run(
                 "cargo",

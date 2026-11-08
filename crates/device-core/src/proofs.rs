@@ -2,7 +2,226 @@ use crate::presentation::Presentation;
 use crate::{app::*, geometry::*, settings::*, telemetry::*};
 
 #[kani::proof]
-#[kani::unwind(5)]
+#[kani::unwind(513)]
+fn retained_selection_requires_matching_preferences_and_a_sleep_wake() {
+    let base = Settings::default();
+    let selected: u8 = kani::any();
+    kani::assume((1..=8).contains(&selected));
+    let mut retained = Settings {
+        rotation: kani::any(),
+        refresh_seconds: kani::any(),
+        gallery: crate::media::GallerySettings {
+            selected: crate::media::ImageId::new(selected).unwrap(),
+            ..Default::default()
+        },
+        ..base
+    };
+    let changed: bool = kani::any();
+    if changed {
+        retained.daily = retained
+            .daily
+            .edit(DailyEdit::Note(Text::new("Changed").unwrap()));
+    }
+    let wake = match kani::any::<u8>() % 3 {
+        0 => WakeReason::PowerOn,
+        1 => WakeReason::Button,
+        _ => WakeReason::Timer,
+    };
+    let expected = (retained.rotation == 0
+        && retained.refresh_seconds == 900
+        && !changed
+        && wake != WakeReason::PowerOn)
+        .then_some(retained.gallery.selected);
+    assert_eq!(retained.retained_selection(base, wake), expected);
+    kani::cover!(expected.is_some());
+    kani::cover!(expected.is_none() && wake == WakeReason::Timer);
+}
+
+#[kani::proof]
+#[kani::unwind(10)]
+fn packed_palette_and_transfer_admission_match_wire_contract() {
+    use crate::media::*;
+    let byte: u8 = kani::any();
+    let legal = |code| matches!(code, 0 | 1 | 2 | 3 | 5 | 6);
+    assert_eq!(
+        valid_palette_byte(byte),
+        legal(byte >> 4) && legal(byte & 15)
+    );
+    let transfer = Transfer::new(
+        17,
+        PhysicalSlot::new(0).unwrap(),
+        ImageRecord::image(ImageId::default(), 0, Rotation::Portrait, 0),
+    )
+    .unwrap();
+    let offset: u32 = kani::any();
+    let result = transfer.plan(17, offset as usize, &[byte; 4]);
+    if let Ok(WritePlan::Append(next)) = result {
+        assert_eq!(offset, 0);
+        assert!(valid_palette_byte(byte));
+        assert_eq!(next.received(), 4);
+    }
+    assert_eq!(transfer.plan(18, 0, &[0; 4]), Err(TransferError::Identity));
+    assert_eq!(transfer.complete(17), Err(TransferError::Incomplete));
+    kani::cover!(result.is_ok());
+    kani::cover!(result.is_err());
+}
+
+#[kani::proof]
+fn image_placement_returns_only_bounded_source_coordinates() {
+    use crate::image::{Anchor, Fit, Placement, Size};
+    let fit = u8::from(kani::any::<bool>()) + 2 * u8::from(kani::any::<bool>());
+    let anchor: u8 = kani::any();
+    kani::assume(anchor < 9);
+    let x: u8 = kani::any();
+    let y: u8 = kani::any();
+    let source = Size::new(3, 5).unwrap();
+    let target = Size::new(12, 16).unwrap();
+    let placement = Placement::new(
+        source,
+        target,
+        Fit::from_code(fit).unwrap(),
+        Anchor::from_code(anchor).unwrap(),
+    );
+    if let Some((sx, sy)) = placement.source(u16::from(x), u16::from(y)) {
+        assert!(sx < 3 && sy < 5 && x < 12 && y < 16);
+    }
+    kani::cover!(placement.source(u16::from(x), u16::from(y)).is_some());
+    kani::cover!(placement.source(u16::from(x), u16::from(y)).is_none());
+}
+
+#[kani::proof]
+#[kani::unwind(513)]
+fn configuration_acknowledgement_preserves_a_different_request() {
+    let requested = Configuration {
+        refresh_seconds: kani::any(),
+        rotation: kani::any(),
+        resume: if kani::any() {
+            ResumePolicy::Last
+        } else {
+            ResumePolicy::Status
+        },
+    };
+    let id = ConfigurationId::new(kani::any());
+    let saved = ConfigurationId::new(kani::any());
+    let request = ConfigurationRequest::new(id, requested);
+    assert_eq!(
+        request.acknowledge(saved),
+        if id == saved { None } else { Some(request) }
+    );
+    let base = Settings {
+        daily: Daily::default().edit(DailyEdit::Note(Text::new("Keep").unwrap())),
+        ..Settings::default()
+    };
+    let projected = base.with_configuration(requested, ScreenId::Checklist);
+    assert_eq!(projected.configuration(), requested);
+    assert_eq!(projected.daily, base.daily);
+    assert_eq!(
+        projected.screen,
+        if requested.resume == ResumePolicy::Last {
+            ScreenId::Checklist
+        } else {
+            ScreenId::Status
+        }
+    );
+}
+
+#[kani::proof]
+#[kani::unwind(513)]
+fn saved_content_never_replaces_a_reverted_edit() {
+    let edit = if kani::any() {
+        DailyEdit::Note(Text::new("Changed").unwrap())
+    } else {
+        DailyEdit::SetTask {
+            id: TaskId::default(),
+            text: Text::new("Changed").unwrap(),
+        }
+    };
+    let original = App::default();
+    let saving = original
+        .transition(AppEvent::EditDaily(edit))
+        .state
+        .settings();
+    let acknowledged = original.transition(AppEvent::Configure(saving)).state;
+    assert_eq!(acknowledged.daily, original.daily);
+    assert_eq!(acknowledged.persisted_settings, saving);
+}
+use crate::{
+    calendar::Month,
+    daily::{Daily, DailyEdit, TaskId, Text, TASK_COUNT},
+};
+
+#[kani::proof]
+#[kani::unwind(3)]
+fn calendar_cells_and_navigation_are_bounded() {
+    let year: u16 = kani::any();
+    let number: u8 = kani::any();
+    let cell: u8 = kani::any();
+    if let Some(month) = Month::new(year, number) {
+        assert!(month.first_weekday() < 7);
+        if let Some(day) = month.day_at(cell) {
+            assert!(day >= 1 && day <= month.days());
+        }
+        for forward in [false, true] {
+            let changed = month.step(forward);
+            assert_eq!(Month::new(changed.year(), changed.number()), Some(changed));
+        }
+        kani::cover!(month.number() == 2 && month.days() == 29);
+    }
+}
+
+#[kani::proof]
+fn task_selection_stays_in_range_and_is_reversible() {
+    let number: u8 = kani::any();
+    if let Some(id) = TaskId::new(number) {
+        assert!(id.index() < TASK_COUNT);
+        assert_eq!(id.step(true).step(false), id);
+        assert_eq!(id.step(false).step(true), id);
+        kani::cover!(number == 6);
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(6)]
+fn printable_text_is_bounded_and_rejects_control_bytes() {
+    let bytes: [u8; 4] = kani::any();
+    if let Ok(input) = core::str::from_utf8(&bytes) {
+        let result = Text::<4>::new(input);
+        assert_eq!(
+            result.is_some(),
+            bytes.iter().all(|byte| (b' '..=b'~').contains(byte))
+        );
+        if let Some(text) = result {
+            assert!(text.as_str().len() <= 4);
+        }
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(513)]
+fn daily_edits_round_trip_and_preserve_unselected_tasks() {
+    let number: u8 = kani::any();
+    kani::assume((1..=6).contains(&number));
+    let id = TaskId::new(number).unwrap();
+    let done: bool = kani::any();
+    let daily = Daily::default()
+        .edit(DailyEdit::SetTask {
+            id,
+            text: Text::new("Task").unwrap(),
+        })
+        .edit(DailyEdit::SetDone { id, done });
+    assert_eq!(daily.task(id).done, done);
+    assert_eq!(daily.edit(DailyEdit::Toggle(id)).task(id).done, !done);
+    for (index, task) in daily.tasks().iter().enumerate() {
+        if index != id.index() {
+            assert!(task.text.is_empty() && !task.done);
+        }
+    }
+    assert_eq!(Daily::decode(&daily.encode()), Some(daily));
+    assert_eq!(daily.edit(DailyEdit::Clear(id)), Daily::default());
+}
+
+#[kani::proof]
+#[kani::unwind(513)]
 fn acknowledged_screen_policy_preserves_navigation_and_deadline() {
     let refresh_seconds: u32 = kani::any();
     kani::assume((MIN_REFRESH_SECONDS..=MAX_REFRESH_SECONDS).contains(&refresh_seconds));
@@ -61,7 +280,7 @@ fn acknowledged_screen_policy_preserves_navigation_and_deadline() {
 }
 
 #[kani::proof]
-#[kani::unwind(33)]
+#[kani::unwind(513)]
 fn previous_settings_format_preserves_values_and_rejects_reserved_payload() {
     let seconds: u32 = kani::any();
     let rotation: u8 = kani::any();
@@ -74,10 +293,15 @@ fn previous_settings_format_preserves_values_and_rejects_reserved_payload() {
         ..Settings::default()
     };
     let generation: u32 = kani::any();
-    let mut bytes = encode(settings, generation);
+    let mut bytes = [0u8; LEGACY_SLOT_BYTES];
+    bytes[..4].copy_from_slice(b"E104");
     bytes[4] = 1;
+    bytes[5] = rotation;
+    bytes[8..12].copy_from_slice(&generation.to_le_bytes());
+    bytes[12..16].copy_from_slice(&seconds.to_le_bytes());
     let crc = crc32(&bytes[..16]);
     bytes[16..20].copy_from_slice(&crc.to_le_bytes());
+    bytes[20..24].copy_from_slice(b"DONE");
     assert_eq!(decode(&bytes), Some((settings, generation)));
     let reserved: u8 = kani::any();
     kani::assume(reserved != 0);
@@ -89,7 +313,7 @@ fn previous_settings_format_preserves_values_and_rejects_reserved_payload() {
 }
 
 #[kani::proof]
-#[kani::unwind(5)]
+#[kani::unwind(2049)]
 fn panel_failure_revokes_sleep_and_stale_failures_cannot_change_state() {
     let mut app = App::default();
     app.sequence = kani::any();
@@ -271,8 +495,8 @@ fn battery_estimate_is_monotone_and_bounded() {
 }
 
 #[kani::proof]
-#[kani::unwind(33)]
-fn settings_round_trip_and_single_bit_corruption() {
+#[kani::unwind(513)]
+fn settings_round_trip_preserves_values() {
     let refresh_seconds: u32 = kani::any();
     let rotation: u8 = kani::any();
     kani::assume((60..=86400).contains(&refresh_seconds) && rotation < 4);
@@ -289,16 +513,40 @@ fn settings_round_trip_and_single_bit_corruption() {
             1 => ScreenId::Diagnostics,
             _ => ScreenId::Drawing,
         },
+        ..Settings::default()
     };
     let generation: u32 = kani::any();
     let bytes = encode(settings, generation);
     assert_eq!(decode(&bytes), Some((settings, generation)));
+}
+
+#[kani::proof]
+#[kani::unwind(513)]
+fn settings_envelope_rejects_single_bit_corruption() {
+    let refresh_seconds: u32 = kani::any();
+    let rotation: u8 = kani::any();
+    kani::assume((60..=86400).contains(&refresh_seconds) && rotation < 4);
+    let settings = Settings {
+        refresh_seconds,
+        rotation,
+        resume: if kani::any() {
+            ResumePolicy::Last
+        } else {
+            ResumePolicy::Status
+        },
+        screen: ScreenId::ALL[usize::from(kani::any::<u8>() % 6)],
+        ..Settings::default()
+    };
+    let mut damaged = encode(settings, kani::any());
     let index: usize = kani::any();
     let bit: u8 = kani::any();
     kani::assume(index < SLOT_BYTES && bit < 8);
-    let mut damaged = bytes;
-    damaged[index] ^= 1 << bit;
-    assert_eq!(decode(&damaged), None);
+    for (position, byte) in damaged.iter_mut().enumerate() {
+        if position == index {
+            *byte ^= 1 << bit;
+        }
+    }
+    assert!(validate_record(&damaged).is_none());
 }
 
 #[kani::proof]
@@ -414,7 +662,7 @@ fn measurement_barrier_cannot_emit_display_or_sleep() {
 }
 
 #[kani::proof]
-#[kani::unwind(5)]
+#[kani::unwind(2049)]
 fn settings_faults_preserve_the_sd_status() {
     let sequence = kani::any();
     let app = App {

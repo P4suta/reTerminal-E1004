@@ -3,6 +3,17 @@ pub const SETTINGS_BASE: u32 = 0x9000;
 pub const FLASH_SECTOR_BYTES: u32 = 4096;
 const SETTINGS_SLOTS: usize = 2;
 
+pub fn write_retained_gallery(
+    bytes: &[u8; SLOT_BYTES],
+    mut write: impl FnMut(usize, u32) -> Result<(), StorageError>,
+) -> Result<(), StorageError> {
+    write(0, 0)?;
+    for (index, word) in bytes.as_chunks::<4>().0.iter().enumerate().skip(1) {
+        write(index, u32::from_le_bytes(*word))?;
+    }
+    write(0, u32::from_le_bytes(bytes.as_chunks::<4>().0[0]))
+}
+
 pub fn settings_address(slot: usize, offset: usize, length: usize) -> Result<u32, StorageError> {
     if slot >= SETTINGS_SLOTS
         || offset >= SLOT_BYTES
@@ -23,9 +34,32 @@ pub enum StorageError {
 }
 
 pub trait SlotStorage {
+    fn read_retained_gallery(&mut self) -> Option<[u8; SLOT_BYTES]> {
+        None
+    }
+    fn retain_gallery(&mut self, _: &[u8; SLOT_BYTES]) {}
     fn read(&mut self, slot: usize, bytes: &mut [u8; SLOT_BYTES]) -> Result<(), StorageError>;
     fn write(&mut self, slot: usize, offset: usize, bytes: &[u8]) -> Result<(), StorageError>;
     fn sync(&mut self) -> Result<(), StorageError>;
+    fn media_read(
+        &mut self,
+        _: device_core::media::PhysicalSlot,
+        _: usize,
+        _: &mut [u8],
+    ) -> Result<(), StorageError> {
+        Err(StorageError::Absent)
+    }
+    fn media_program(
+        &mut self,
+        _: device_core::media::PhysicalSlot,
+        _: usize,
+        _: &[u8],
+    ) -> Result<(), StorageError> {
+        Err(StorageError::Absent)
+    }
+    fn media_erase(&mut self, _: device_core::media::PhysicalSlot) -> Result<(), StorageError> {
+        Err(StorageError::Absent)
+    }
 }
 
 pub fn save(storage: &mut impl SlotStorage, settings: Settings) -> Result<(), StorageError> {

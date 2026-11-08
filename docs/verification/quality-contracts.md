@@ -1,5 +1,84 @@
 # Quality contracts
 
+## Preview server startup
+
+Normal startup must preserve an existing listener and serve the app at its announced address.
+The earlier browser check used a separate fixed port and missed conflicts on the normal port.
+The shared binding boundary retries an address conflict with an OS-assigned port while preserving other binding errors.
+The listener stays owned throughout HTTP setup, avoiding a probe followed by a separate bind.
+Command tests occupy the requested port, start simultaneous previews, request real HTTP assets, and check that stopping one preview preserves the other.
+Injected binding errors check preferred-port selection, the conflict retry, and error propagation without relying on port availability.
+Browser checks navigate to the child server's announced address rather than a fixed test port.
+
+## Live editing and task workspaces
+
+Changing a valid image control must update the visible preview without a separate preparation action.
+Earlier browser tests pressed Prepare image after changing values, leaving the ordinary editing contract uncovered.
+The browser gate now exercises every editing control and compares 42 control combinations with native pixels.
+File decoding and delayed conversion use separate generations so stale work can't replace another image or discard edits made during decoding.
+Each image owns its source and editing values.
+Invalid values keep the preceding valid pixels and prevent saving and sending.
+Prepared files remain editable, and outgoing transfers capture their image before asynchronous connection work.
+The browser compares exported packed pixels with the visible canvas and compares an actual Chrome download with native pixels.
+Host Clippy excludes Wasm-only browser modules.
+The fast gate runs strict Wasm Clippy as well and rejects an injected lint defect in the browser adapter.
+Transfer tests cancel after an early chunk and after the final acknowledged chunk.
+The earlier loop checked cancellation only before chunks and could commit a cancellation received with the final acknowledgement.
+The commit boundary now checks cancellation again and ends the cancellable phase before committing.
+Edits made during transfer leave its snapshot unchanged and produce a message identifying newer unsent edits.
+Daily submission validates both drafts before updating the preview or issuing a device command.
+
+The style gate parses rules and declarations with separate parser boundaries.
+The preceding token scanner treated selector colons as property separators and rejected grouped identifier selectors.
+Valid selector groups, nested rules, and allowed effect values have accepting fixtures.
+Colored shorthand values, nested palette values, malformed strings, and color functions have rejecting fixtures.
+
+Task workspaces keep their controls and drafts across navigation.
+Keyboard tests check tab selection, wrapping, focus order, inactive panels, and hidden development controls.
+Each normal workspace receives narrow-layout, text enlargement, spacing, and target-size checks.
+The normal calendar uses browser local time, while development tools keep the fixed example.
+A browser clock fixture checks a leap-day date without depending on the test machine's wall clock.
+
+## Color media and transport authority
+
+Image files validate their header, checksum, exact packed length, and all palette nibbles before admission.
+Flash transfers validate identity, contiguous progress, retry contents, and complete checksums before a final commit marker.
+The previous current record remains outside the staging erase boundary.
+The flash model rejects attempts to restore programmed bits without erasing.
+Card tests read prepared files through the production filesystem code and compare the bytes written by an independent filesystem implementation.
+
+Mutation testing exposed gaps for zero-length chunks and retries overlapping unwritten bytes.
+It also exposed gaps for loading interrupted by a transfer signal, spurious completion while ready, and timer wake during a paused slideshow.
+The added transition sequences enforce those boundaries.
+The retry admission predicate uses checked end offsets, so a redundant start-offset comparison is unnecessary.
+Placement checks reject each target edge, including a covered image extending beyond the canvas.
+Coordinate conversion rejects negative positions before unsigned bounds checks.
+Ordered dithering tests require known black and white positions because a pixel-count test alone would accept an inverted threshold pattern.
+Earlier preview tests kept app snapshots but had no mutable image assets.
+The image test requires the previous pixel snapshot to survive replacement, timeout, and retry.
+
+An unreadable gallery index must fail a Gallery display request before the panel receives a replacement image.
+The original startup fallback treated a failed index read as an empty collection.
+The regression task injects that read failure and requires an absent presentation and no panel frame.
+Startup and explicit operations can retry index loading after the storage port recovers.
+
+The browser serial test models request correlation, a complete 960000-byte payload with an independently calculated checksum, cancellation, rejection, and unlocked streams at disconnect.
+Production task tests process the same console protocol, commit images, expire interrupted uploads, reject corrupt card input, and reload committed content after sleep.
+The faster console batch can accept scan and connection requests before earlier scan output reaches the serial port.
+The radio test now waits for both connection state and the requested observable output instead of assuming their completion times coincide.
+Storage replies carry a nonwrapping request identifier inside the runtime and the browser protocol.
+A timed-out request can't acknowledge a later request through a delayed shared signal.
+The task test delivers a mismatched reply before the matching error and requires the console to keep waiting.
+Automatic slide selection stays outside the durable preference projection.
+Earlier gallery tests checked selection and restart independently, so they didn't detect one settings transaction per timer cycle.
+The populated-gallery task repeats timer wake and sleep with a constant settings write count.
+The shared retained-record writer invalidates magic first and restores it last.
+Fault injection stops every word write and rejects each incomplete snapshot.
+Restoration requires a button or timer wake and exact agreement with every committed preference except the current slide.
+The gallery accepts restoration only while its index is loading.
+Mutation testing exposed the missing assertion for a late restore after loading or during a transfer.
+The transition test rejects both late restores and preserves a deferred timer advance during valid restoration.
+
 ## Presented images and asynchronous input
 
 An update can expose a new image only after the active operation completes successfully.
@@ -151,8 +230,8 @@ Their registry preserves every scenario from the earlier combined test, which re
 ## User workflows and limits
 
 The browser exercises native buttons, Enter submission, invalid-field focus, labels, descriptions, mode state, actual canvas preservation, recovery, reset, and atomic replay.
-It compares native and Wasm frames across all three screens, four rotations, and five measurement scenarios.
-The 60 comparisons establish agreement between adapters.
+It compares native and Wasm frames across all seven screens, four rotations, and five measurement scenarios.
+The 140 comparisons establish agreement between adapters.
 Independent checks use geometry, the reviewed SHA-256 value, protocol traces, and rendered output to detect shared rendering errors.
 
 The earlier screenshot check compared packed frames but didn't inspect the saved display image in Portable Network Graphics (PNG) format.
@@ -248,6 +327,8 @@ The earlier models kept an advertising flag after controller drop and injected b
 Those assumptions let premature controller shutdown and inverted button polarity escape detection.
 The controller lease now stops advertising when dropped, and independent packet fixtures assert address, flags, service bytes, battery reads, notifications, disconnect, and reconnect behavior.
 Physical input tests drive all three active-low inputs through bounce, hold, release, and repeated presses and observe the production button task's events.
+Sleep arming waits for release classification, so the runtime can't sleep before emitting a pending tap.
+The regression checks every button after both taps and holds during the release debounce interval.
 Removing input inversion triggers the first released-input assertion.
 The BLE server uses the pinned library's automatic request processing on event drop rather than duplicating acceptance behavior whose removal was equivalent.
 
@@ -258,7 +339,7 @@ The test matrix fails each slot independently and makes failed reads write a new
 The source-bound proof checks the same production boot function with arbitrary read failures and storage error variants.
 Recovery preserves the valid readable setting and reports the storage fault without trusting failed buffers.
 
-Writing a 24-byte settings record triggers a larger physical program operation in the pinned flash adapter.
+Writing a 512-byte settings record triggers a larger physical program operation in the pinned flash adapter.
 The adapter reads a 4096-byte sector, erases that sector, and programs the reconstructed contents.
 For example, committing the inactive sector must preserve the active sector.
 The inactive sector begins at address `0xa000`.
@@ -282,7 +363,7 @@ The distinction prevents a passing permanent-failure test from standing in for a
 
 The earlier integration fixture used the default interval, masking a dropped loaded setting, and compared transferred pixels with current desired state after sleep.
 The matrix now checks independent interval and orientation anchors before events, then compares controller bytes with the last successful presentation snapshot.
-It covers four radio configurations, four orientations, three screens, and power, timer, and button wake reasons.
+It covers four radio configurations, four orientations, seven screens, and power, timer, and button wake reasons.
 The hardware binding gate also checks actual signal roles and initial levels, because a pin-number inventory alone accepted a pin attached to the wrong peripheral method.
 Metamorphic fixtures require wrong roles, levels, tokens, duplicate pins, and missing initialization to fail.
 

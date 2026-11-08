@@ -3,7 +3,11 @@ use core::{
     cell::{Cell, RefCell},
     sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
 };
-use device_core::{app::App, settings::Settings, telemetry::*};
+use device_core::{
+    app::App,
+    settings::{Configuration, ConfigurationId, ConfigurationRequest, Settings},
+    telemetry::*,
+};
 use embassy_sync::{
     blocking_mutex::{raw::CriticalSectionRawMutex, Mutex},
     channel::Channel,
@@ -18,11 +22,34 @@ pub const LOG_QUEUE: usize = 16;
 pub const WIFI_QUEUE: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MediaRequest {
+    pub id: u32,
+    pub command: e1004_bsp::media::MediaCommand,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MediaReply {
+    pub id: u32,
+    pub result: Result<usize, e1004_bsp::media::MediaError>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "The single bus owner receives owned snapshots without heap allocation."
+)]
 pub enum BusRequest {
-    Display { app: App, id: u32 },
+    Display {
+        app: App,
+        id: u32,
+    },
     Sleep(SleepTicket),
     Save(Settings),
+    Configure {
+        id: ConfigurationId,
+        settings: Settings,
+    },
     Diagnose,
+    Media(MediaRequest),
 }
 
 #[derive(Debug)]
@@ -53,6 +80,7 @@ pub struct System {
     pub sleep_request: Signal<CriticalSectionRawMutex, SleepTicket>,
     pub measure: Signal<CriticalSectionRawMutex, ()>,
     pub rtc_set: Signal<CriticalSectionRawMutex, DateTime>,
+    pub media_reply: Signal<CriticalSectionRawMutex, MediaReply>,
     pub button_sleep: Signal<CriticalSectionRawMutex, bool>,
     pub button_armed: Signal<CriticalSectionRawMutex, bool>,
     pub output_sleep: Signal<CriticalSectionRawMutex, bool>,
@@ -69,6 +97,9 @@ pub struct System {
     pub capabilities: Radios,
     pub extension: Mutex<CriticalSectionRawMutex, Cell<Sample<u16>>>,
     snapshot: Mutex<CriticalSectionRawMutex, Cell<Option<App>>>,
+    requested_configuration: Mutex<CriticalSectionRawMutex, Cell<Option<ConfigurationRequest>>>,
+    configuration_sequence: Mutex<CriticalSectionRawMutex, Cell<Option<u32>>>,
+    media_sequence: Mutex<CriticalSectionRawMutex, Cell<Option<u32>>>,
     display: Mutex<
         CriticalSectionRawMutex,
         RefCell<device_core::presentation::Presentation<Option<App>>>,
@@ -83,6 +114,7 @@ impl System {
             sleep_request: Signal::new(),
             measure: Signal::new(),
             rtc_set: Signal::new(),
+            media_reply: Signal::new(),
             button_sleep: Signal::new(),
             button_armed: Signal::new(),
             output_sleep: Signal::new(),
@@ -99,6 +131,9 @@ impl System {
             capabilities,
             extension: Mutex::new(Cell::new(Sample::Unavailable)),
             snapshot: Mutex::new(Cell::new(None)),
+            requested_configuration: Mutex::new(Cell::new(None)),
+            configuration_sequence: Mutex::new(Cell::new(Some(0))),
+            media_sequence: Mutex::new(Cell::new(Some(0))),
             display: Mutex::new(RefCell::new(device_core::presentation::Presentation::new(
                 None,
             ))),
@@ -110,6 +145,41 @@ impl System {
     }
     pub fn publish(&self, app: App) {
         self.snapshot.lock(|state| state.set(Some(app)));
+    }
+    pub fn configuration_settings(&self) -> Settings {
+        let app = self.snapshot().unwrap_or_default();
+        match self.requested_configuration.lock(Cell::get) {
+            Some(request) => app
+                .settings()
+                .with_configuration(request.value(), app.screen),
+            None => app.settings(),
+        }
+    }
+    pub fn reserve_configuration(&self, value: Configuration) -> Option<ConfigurationRequest> {
+        self.configuration_sequence.lock(|counter| {
+            let sequence = counter.get()?;
+            counter.set(sequence.checked_add(1));
+            Some(ConfigurationRequest::new(
+                ConfigurationId::new(sequence),
+                value,
+            ))
+        })
+    }
+    pub fn request_configuration(&self, request: ConfigurationRequest) {
+        self.requested_configuration
+            .lock(|requested| requested.set(Some(request)));
+    }
+    pub fn reserve_media(&self, command: e1004_bsp::media::MediaCommand) -> Option<MediaRequest> {
+        self.media_sequence.lock(|counter| {
+            let id = counter.get()?;
+            counter.set(id.checked_add(1));
+            Some(MediaRequest { id, command })
+        })
+    }
+    pub fn acknowledge_configuration(&self, id: ConfigurationId) {
+        self.requested_configuration.lock(|requested| {
+            requested.set(requested.get().and_then(|desired| desired.acknowledge(id)));
+        });
     }
     pub fn presented(&self) -> Option<App> {
         self.display.lock(|display| display.borrow().shown())

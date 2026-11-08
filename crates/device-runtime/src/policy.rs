@@ -24,8 +24,10 @@ impl SleepTicket {
             && !app.storage_busy
             && !app.measurement_busy
             && !app.sleep_requested
+            && !app.gallery.busy()
+            && !app.awake()
             && app.sequence == self.sequence
-            && app.refresh_seconds == self.seconds
+            && app.sleep_seconds() == self.seconds
     }
 }
 

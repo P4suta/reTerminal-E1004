@@ -1,7 +1,9 @@
 use chromiumoxide::{
     browser::{Browser, BrowserConfig},
     cdp::browser_protocol::{
-        emulation::SetDeviceMetricsOverrideParams, page::CaptureScreenshotFormat,
+        browser::{SetDownloadBehaviorBehavior, SetDownloadBehaviorParams},
+        emulation::SetDeviceMetricsOverrideParams,
+        page::CaptureScreenshotFormat,
     },
     page::ScreenshotParams,
     Page,
@@ -11,21 +13,54 @@ use sha2::{Digest, Sha256};
 use std::{
     error::Error,
     fs,
-    process::{Child, Command},
+    io::{BufRead, BufReader},
+    net::SocketAddr,
+    process::{Child, Command, Stdio},
     time::Duration,
 };
 
 type BrowserResult = Result<(), Box<dyn Error + Send + Sync>>;
-const PREVIEW_URL: &str = "http://127.0.0.1:8081";
 const DESKTOP_WIDTH: u32 = 1280;
 const DESKTOP_HEIGHT: u32 = 900;
 const MOBILE_WIDTH: u32 = 390;
 const MOBILE_HEIGHT: u32 = 844;
 const INITIALIZATION_POLLS: usize = 100;
 const INITIALIZATION_POLL_MS: u64 = 20;
+const DOWNLOAD_POLLS: usize = 1500;
 const ORIENTATION_COUNT: usize = 4;
-const SCREEN_COUNT: usize = 3;
+const SCREEN_COUNT: usize = 7;
 struct Server(Child);
+impl Server {
+    async fn start() -> Result<(Self, String), Box<dyn Error + Send + Sync>> {
+        let mut server = Self(
+            Command::new(std::env::current_exe()?)
+                .args(["serve", "0"])
+                .stdout(Stdio::piped())
+                .spawn()?,
+        );
+        let stdout = server
+            .0
+            .stdout
+            .take()
+            .ok_or("missing preview server output")?;
+        let line = tokio::time::timeout(
+            Duration::from_secs(10),
+            tokio::task::spawn_blocking(move || {
+                let mut line = String::new();
+                BufReader::new(stdout).read_line(&mut line)?;
+                Ok::<_, std::io::Error>(line)
+            }),
+        )
+        .await???;
+        let address: SocketAddr = line
+            .trim()
+            .strip_prefix("Preview: http://")
+            .ok_or("preview server did not announce its listening address")?
+            .parse()?;
+        Ok((server, format!("http://{address}")))
+    }
+}
+
 impl Drop for Server {
     fn drop(&mut self) {
         match self.0.try_wait() {
@@ -46,7 +81,7 @@ impl Drop for Server {
 async fn assert_js(page: &Page, expression: &str) -> BrowserResult {
     let result = page.evaluate(expression).await?;
     if result.value() != Some(&serde_json::Value::Bool(true)) {
-        let context = page.evaluate("JSON.stringify({error:document.querySelector('#error')?.textContent,status:document.querySelector('#update-status')?.textContent,focus:document.activeElement?.id,state:document.querySelector('#state')?.textContent.slice(0,300)})").await;
+        let context = page.evaluate("JSON.stringify({error:document.querySelector('#error')?.textContent,status:document.querySelector('#update-status')?.textContent,focus:document.activeElement?.id,width:innerWidth,scrollWidth:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('main *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1).slice(0,8).map(e=>[e.id||e.tagName,e.getBoundingClientRect().width]),state:document.querySelector('#state')?.textContent.slice(0,300)})").await;
         fs::create_dir_all("target/screenshots")?;
         match page
             .screenshot(
@@ -68,8 +103,726 @@ async fn assert_js(page: &Page, expression: &str) -> BrowserResult {
     Ok(())
 }
 
+async fn wait_js(page: &Page, expression: &str) -> BrowserResult {
+    for _ in 0..1000 {
+        if page.evaluate(expression).await?.value() == Some(&serde_json::Value::Bool(true)) {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_js(page, expression).await
+}
+
+async fn media_checks(browser: &Browser, preview_url: &str) -> BrowserResult {
+    let page = browser.new_page(format!("{preview_url}/?tools")).await?;
+    page.execute(SetDeviceMetricsOverrideParams::new(1280, 1700, 1.0, false))
+        .await?;
+    assert_js(&page,"(async()=>{const r=await fetch('/pkg/NOTICE.txt');return r.ok&&r.headers.get('content-type').startsWith('text/plain')&&(await r.text()).includes('Copyright (c) Project Nayuki. (MIT License)');})()").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#state')?.textContent.length>0",
+    )
+    .await?;
+    click(&page, "#tab-images").await?;
+    page.evaluate("document.querySelector('#image-dither').value='none'; (async()=>{ const c=document.createElement('canvas'); c.width=2;c.height=2;const x=c.getContext('2d');x.fillStyle='red';x.fillRect(0,0,2,2);const blob=await new Promise(r=>c.toBlob(r));const files=new DataTransfer();files.items.add(new File([blob],'red.png',{type:'image/png'}));const e=document.querySelector('#image-file');e.files=files.files;e.dispatchEvent(new Event('change')); })()").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#media-status').textContent==='Preview updated.' && !document.querySelector('#export-image').disabled",
+    )
+    .await?;
+    assert_js(&page,"(()=>{const x=document.querySelector('#display').getContext('2d');return [...x.getImageData(600,800,1,1).data].join()==='255,0,0,255' && [...x.getImageData(0,0,1,1).data].join()==='255,255,255,255';})()").await?;
+    show_control(&page, "#image-brightness").await?;
+    page.evaluate("window.mediaBeforeInvalid=document.querySelector('#display').toDataURL();document.querySelector('#image-brightness').focus();document.querySelector('#image-brightness').value='101';document.querySelector('#image-brightness').dispatchEvent(new Event('input',{bubbles:true}))").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#media-error').textContent.length>0",
+    )
+    .await?;
+    assert_js(&page,"document.activeElement.id==='image-brightness' && document.querySelector('#image-brightness').getAttribute('aria-invalid')==='true' && document.querySelector('#display').toDataURL()===window.mediaBeforeInvalid").await?;
+    page.evaluate("document.querySelector('#image-brightness').value='0';document.querySelector('#image-brightness').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#image-palette').value='mono';document.querySelector('#image-palette').dispatchEvent(new Event('change',{bubbles:true}))").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#display').getContext('2d').getImageData(600,800,1,1).data[0]===0",
+    )
+    .await?;
+    page.evaluate("window.savedImage=document.querySelector('#display').toDataURL();{const files=new DataTransfer();files.items.add(new File(['<svg/>'],'external.svg',{type:'image/svg+xml'}));const e=document.querySelector('#image-file');e.files=files.files;e.dispatchEvent(new Event('change'));}").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#media-error').textContent.includes('Choose PNG')",
+    )
+    .await?;
+    assert_js(
+        &page,
+        "document.querySelector('#display').toDataURL()===window.savedImage",
+    )
+    .await?;
+    page.evaluate("document.querySelector('#poster-text').value='Library return\\nRoom 204'")
+        .await?;
+    click(&page, "#make-text").await?;
+    wait_js(&page,"!document.querySelector('#media-error').textContent && document.querySelector('#display').toDataURL()!==window.savedImage").await?;
+    page.evaluate("document.querySelector('#poster-text').value='https://example.com/'")
+        .await?;
+    click(&page, "#make-qr").await?;
+    wait_js(&page, "!document.querySelector('#media-error').textContent").await?;
+    assert_js(&page,"(()=>{const p=document.querySelector('#display').getContext('2d').getImageData(0,0,1200,1600).data;let black=0;for(let i=0;i<p.length;i+=4){if(p[i]===0)black++;if(p[i]!==p[i+1]||p[i]!==p[i+2])return false;}return black>100000&&black<900000&&p[0]===255;})()").await?;
+    page.evaluate("document.querySelector('#image-palette').value='six'")
+        .await?;
+    click(&page, "#make-palette").await?;
+    wait_js(&page, "!document.querySelector('#media-error').textContent").await?;
+    assert_js(&page,"(()=>{const x=document.querySelector('#display').getContext('2d');const colors=[[0,0,0],[255,255,255],[255,255,0],[255,0,0],[0,0,255],[0,255,0]];return colors.every((rgb,i)=>[...x.getImageData(600,Math.floor(i*1600/6+100),1,1).data].slice(0,3).join()===rgb.join());})()").await?;
+    page.evaluate(r#"window.serialCommands=[];window.serialReceived=0;window.serialCommitted=0;window.serialFail=false;window.serialCancel=false;window.serialClosed=false;
+        const decoder=new TextDecoder(),encoder=new TextEncoder();let input;const readable=new ReadableStream({start(c){input=c;}});
+        let transfer=null;window.serialInput=input;
+        const writable=new WritableStream({async write(bytes){const line=decoder.decode(bytes);if(line.length>257||!line.endsWith('\n'))throw new Error('invalid envelope');const fields=line.trim().split(' ');const id=Number(fields[1]);const body=fields.slice(2);window.serialCommands.push(body.join(' '));let ok=true;
+          if(body[0]==='status')input.enqueue(encoder.encode('event=shown screen=Gallery image=1 generation=1\r\nevent=status screen=Gallery refresh=Idle\r\n'));
+          if(body[0]==='image'){
+            if(body[1]==='begin'){transfer={id:Number(body[2]),crc:Number(body[5]),bytes:new Uint8Array(960000),received:0};}
+            if(body[1]==='data'){const offset=Number(body[3]),hex=body[4];if(!transfer||Number(body[2])!==transfer.id||offset!==transfer.received)ok=false;else if(window.serialFail){ok=false;window.serialFail=false;}else{if(window.serialMutate){window.serialMutate=false;document.querySelector('#image-invert').checked=true;document.querySelector('#image-invert').dispatchEvent(new Event('change'));await new Promise(resolve=>setTimeout(resolve,200));}for(let i=0;i<hex.length;i+=2)transfer.bytes[offset+i/2]=parseInt(hex.slice(i,i+2),16);transfer.received+=hex.length/2;window.serialReceived=transfer.received;if(window.serialCancel&&transfer.received>=(window.serialCancelAt??256)){window.serialCancel=false;document.querySelector('#cancel-upload').click();}}}
+            if(body[1]==='commit'){let crc=0xffffffff;if(!transfer||transfer.received!==960000)ok=false;else{for(const b of transfer.bytes){crc^=b;for(let n=0;n<8;n++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}ok=(~crc>>>0)===transfer.crc;if(ok)window.serialCommitted++;}}
+            if(body[1]==='abort')transfer=null;
+          }
+          input.enqueue(encoder.encode(`reply ${id+100000} ok\r\nreply ${id} ${ok?'ok':'error'}\r\n`));
+        }});
+        window.mockPort={readable,writable,async open(options){if(options.baudRate!==115200)throw new Error('wrong baud');},async close(){if(readable.locked||writable.locked)throw new Error('stream lock leaked');window.serialClosed=true;}};
+        Object.defineProperty(navigator,'serial',{configurable:true,value:{async requestPort(){return window.mockPort;}}});
+        document.querySelector('#device-connect').disabled=false;
+        "#).await?;
+    click(&page, "#device-connect").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#connection-status').textContent==='Showing Image 1.' && document.querySelector('#connection-summary').textContent==='Display connected'",
+    )
+    .await?;
+    page.evaluate("window.sentPreview=document.querySelector('#display').toDataURL();window.serialMutate=true").await?;
+    click(&page, "#send-image").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#transfer-status').textContent.startsWith('Image sent')",
+    )
+    .await?;
+    assert_js(&page,"window.serialCommitted===1 && window.serialReceived===960000 && !document.querySelector('#media-error').textContent && window.serialCommands.includes('screen gallery')").await?;
+    assert_js(&page, "document.querySelector('#display').toDataURL()!==window.sentPreview && window.serialCommands.includes('rotation 0')").await?;
+    page.evaluate("window.sentWhileEditing=document.querySelector('#transfer-status').textContent")
+        .await?;
+    click(&page, "#device-status").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#connection-status').textContent==='Showing Image 1.'",
+    )
+    .await?;
+    page.evaluate(
+        "window.serialInput.enqueue(new TextEncoder().encode('event=display_complete\\r\\n'))",
+    )
+    .await?;
+    wait_js(
+        &page,
+        "document.querySelector('#transfer-status').textContent==='Display updated.'",
+    )
+    .await?;
+    click(&page, "#tab-daily").await?;
+    page.evaluate("window.beforeDraftSend=window.serialCommands.length;document.querySelector('#task-text').value='x'.repeat(49);document.querySelector('#note-text').value='Draft note'").await?;
+    click(&page, "#send-settings").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#task-text').getAttribute('aria-invalid')==='true'",
+    )
+    .await?;
+    assert_js(&page, "document.activeElement.id==='task-text' && window.serialCommands.length===window.beforeDraftSend && !document.querySelector('#state').textContent.includes('Note: Draft note')").await?;
+    page.evaluate("document.querySelector('#task-text').value='Bring books';document.querySelector('#note-text').value='Draft note'").await?;
+    click(&page, "#send-settings").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#daily-send-status').textContent.startsWith('Content sent')",
+    )
+    .await?;
+    assert_js(&page, "window.serialCommands.includes('task set 1 Bring books') && window.serialCommands.includes('note set Draft note') && document.querySelector('#state').textContent.includes('Note: Draft note')").await?;
+    click(&page, "#tab-images").await?;
+    page.evaluate("window.serialCancel=true;document.querySelector('#send-image').click()")
+        .await?;
+    wait_js(
+        &page,
+        "document.querySelector('#media-error').textContent.includes('Sending cancelled')",
+    )
+    .await?;
+    assert_js(
+        &page,
+        "window.serialCommitted===1 && window.serialCommands.at(-1).startsWith('image abort ')",
+    )
+    .await?;
+    page.evaluate("document.querySelector('#media-error').textContent='';window.serialCancel=true;window.serialCancelAt=960000;document.querySelector('#send-image').click()").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#media-error').textContent.includes('Sending cancelled')",
+    )
+    .await?;
+    assert_js(
+        &page,
+        "window.serialCommitted===1 && window.serialCommands.at(-1).startsWith('image abort ')",
+    )
+    .await?;
+    assert_js(&page, "window.sentWhileEditing.includes('newer edits')").await?;
+    page.evaluate("window.serialFail=true;document.querySelector('#send-image').click()")
+        .await?;
+    wait_js(
+        &page,
+        "document.querySelector('#media-error').textContent.includes('rejected')",
+    )
+    .await?;
+    assert_js(
+        &page,
+        "window.serialCommitted===1 && window.serialCommands.at(-1).startsWith('image abort ')",
+    )
+    .await?;
+    click(&page, "#device-disconnect").await?;
+    wait_js(&page,"window.serialClosed && document.querySelector('#connection-status').textContent==='Display disconnected.'").await?;
+    assert_js(
+        &page,
+        "!window.mockPort.readable.locked&&!window.mockPort.writable.locked",
+    )
+    .await?;
+    click(&page, "#reset-image").await?;
+    click(&page, "#make-palette").await?;
+    click(&page, "#tab-images").await?;
+    page.evaluate("window.scrollTo(0,0)").await?;
+    wait_js(&page, "!document.querySelector('#media-error').textContent").await?;
+    fs::write(
+        "target/screenshots/color-media.png",
+        page.screenshot(
+            ScreenshotParams::builder()
+                .format(CaptureScreenshotFormat::Png)
+                .full_page(false)
+                .build(),
+        )
+        .await?,
+    )?;
+    page.close().await?;
+    Ok(())
+}
+
+async fn live_image_checks(browser: &Browser, preview_url: &str) -> BrowserResult {
+    let page = browser.new_page(preview_url).await?;
+    page.execute(SetDeviceMetricsOverrideParams::new(1280, 900, 1.0, false))
+        .await?;
+    wait_js(
+        &page,
+        "document.querySelector('#state')?.textContent.length>0",
+    )
+    .await?;
+    page.evaluate("document.querySelector('#image-palette').value='mono';document.querySelector('#image-dither').value='none';(async()=>{const c=document.createElement('canvas');c.width=2;c.height=2;const x=c.getContext('2d');x.fillStyle='rgb(128,128,128)';x.fillRect(0,0,2,2);const blob=await new Promise(r=>c.toBlob(r));const files=new DataTransfer();files.items.add(new File([blob],'gray.png',{type:'image/png'}));const input=document.querySelector('#image-file');input.files=files.files;input.dispatchEvent(new Event('change'));})()").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#image-name').textContent==='gray.png' && !document.querySelector('#export-image').disabled",
+    )
+    .await?;
+    page.evaluate("window.beforeDither=document.querySelector('#display').toDataURL();document.querySelector('#image-dither').value='ordered';document.querySelector('#image-dither').dispatchEvent(new Event('change',{bubbles:true}))").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#display').toDataURL()!==window.beforeDither",
+    )
+    .await?;
+    page.evaluate(r#"window.chooseFile=async(file)=>{const files=new DataTransfer();files.items.add(file);const input=document.querySelector('#image-file');input.files=files.files;input.dispatchEvent(new Event('change'));};
+        window.fixtureFile=async(name)=>{const c=document.createElement('canvas');c.width=32;c.height=24;const x=c.getContext('2d');const image=x.createImageData(32,24);for(let y=0;y<24;y++)for(let x=0;x<32;x++){const i=(y*32+x)*4;image.data.set((x+y)%11===0?[0,0,0,0]:[(x*37+y*13)%256,(x*9+y*41)%256,(x*53+y*7)%256,255],i);}x.putImageData(image,0,0);return new File([await new Promise(r=>c.toBlob(r))],name,{type:'image/png'});};
+        (async()=>chooseFile(await fixtureFile('colors.png')))();"#).await?;
+    wait_js(&page, "document.querySelector('#image-name').textContent==='colors.png' && !document.querySelector('#export-image').disabled").await?;
+    let base = ImageEditFixture::default();
+    let controls = [
+        "rotation",
+        "image-fit",
+        "image-anchor",
+        "image-palette",
+        "image-dither",
+        "image-brightness",
+        "image-contrast",
+        "image-saturation",
+        "image-invert",
+    ];
+    assert_js(&page, &format!("[...document.querySelectorAll('#panel-images input,#panel-images select')].map(e=>e.id).filter(id=>!['image-slot','poster-size','slideshow-seconds'].includes(id)).sort().join() === {}.sort().join()", serde_json::to_string(&controls)?)).await?;
+    for field in controls {
+        click(&page, "#reset-image").await?;
+        let mut fixture = base;
+        match field {
+            "rotation" => fixture.rotation = device_core::geometry::Rotation::Landscape,
+            "image-fit" => fixture.fit = device_core::image::Fit::Cover,
+            "image-anchor" => fixture.anchor = device_core::image::Anchor::TopLeft,
+            "image-palette" => fixture.palette = device_core::image::Palette::Monochrome,
+            "image-dither" => fixture.dither = device_core::image::Dither::FloydSteinberg,
+            "image-brightness" => fixture.brightness = 100,
+            "image-contrast" => fixture.contrast = 0,
+            "image-saturation" => fixture.saturation = 0,
+            "image-invert" => fixture.invert = true,
+            _ => return Err("uncovered image control".into()),
+        }
+        verify_image_edit(&page, fixture, field).await?;
+    }
+    for rotation in 0..4 {
+        for fit in 0..4 {
+            let fixture = ImageEditFixture {
+                rotation: device_core::geometry::Rotation::from_code(rotation)
+                    .ok_or("fixture rotation")?,
+                fit: device_core::image::Fit::from_code(fit).ok_or("fixture fit")?,
+                ..base
+            };
+            verify_image_edit(&page, fixture, "rotation").await?;
+        }
+    }
+    for anchor in 0..9 {
+        verify_image_edit(
+            &page,
+            ImageEditFixture {
+                fit: device_core::image::Fit::Cover,
+                anchor: device_core::image::Anchor::from_code(anchor).ok_or("fixture anchor")?,
+                ..base
+            },
+            "image-anchor",
+        )
+        .await?;
+    }
+    for palette in [
+        device_core::image::Palette::SixColor,
+        device_core::image::Palette::Monochrome,
+    ] {
+        for dither in [
+            device_core::image::Dither::None,
+            device_core::image::Dither::Ordered,
+            device_core::image::Dither::FloydSteinberg,
+        ] {
+            verify_image_edit(
+                &page,
+                ImageEditFixture {
+                    palette,
+                    dither,
+                    ..base
+                },
+                "image-dither",
+            )
+            .await?;
+        }
+    }
+    for fixture in [
+        ImageEditFixture {
+            brightness: -100,
+            ..base
+        },
+        ImageEditFixture {
+            contrast: 200,
+            saturation: 200,
+            ..base
+        },
+    ] {
+        verify_image_edit(&page, fixture, "image-brightness").await?;
+    }
+    println!("Live image controls matched native pixels in 42 editing cases");
+    click(&page, "#reset-image").await?;
+    page.evaluate("window.validImage=document.querySelector('#display').toDataURL();document.querySelector('#image-brightness').focus();document.querySelector('#image-brightness').value='101';document.querySelector('#image-brightness').dispatchEvent(new Event('input',{bubbles:true}))").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#media-error').textContent.includes('Brightness')",
+    )
+    .await?;
+    assert_js(&page, "document.activeElement.id==='image-brightness' && document.querySelector('#image-brightness').getAttribute('aria-invalid')==='true' && document.querySelector('#display').toDataURL()===window.validImage && document.querySelector('#export-image').disabled && document.querySelector('#send-image').disabled && document.querySelector('#display').getAttribute('aria-busy')==='false'").await?;
+    page.evaluate("document.querySelector('#image-brightness').value='50';document.querySelector('#image-brightness').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#image-brightness').value='-100';document.querySelector('#image-brightness').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#image-brightness').value='0';document.querySelector('#image-brightness').dispatchEvent(new Event('input',{bubbles:true}))").await?;
+    wait_js(&page, "!document.querySelector('#export-image').disabled && !document.querySelector('#media-error').textContent").await?;
+    assert_js(&page, "document.querySelector('#display').toDataURL()===window.validImage && document.activeElement.id==='image-brightness'").await?;
+    page.evaluate("window.createDownloadUrl=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{window.downloadedImage=blob;return createDownloadUrl(blob);};window.nativeDownloadClick=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){window.downloadName=this.download;};").await?;
+    click(&page, "#export-image").await?;
+    wait_js(
+        &page,
+        "window.downloadedImage?.type==='image/png' && window.downloadName==='IMAGE1.png'",
+    )
+    .await?;
+    let directory = std::env::current_dir()?
+        .join("target/browser-downloads")
+        .join(std::process::id().to_string());
+    fs::create_dir_all(directory.parent().ok_or("download directory")?)?;
+    fs::create_dir(&directory)?;
+    let mut download = SetDownloadBehaviorParams::new(SetDownloadBehaviorBehavior::Allow);
+    download.download_path = Some(directory.to_string_lossy().into_owned());
+    browser.execute(download).await?;
+    page.evaluate("HTMLAnchorElement.prototype.click=window.nativeDownloadClick")
+        .await?;
+    click(&page, "#export-image").await?;
+    for _ in 0..DOWNLOAD_POLLS {
+        if directory.join("IMAGE1.png").is_file() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(INITIALIZATION_POLL_MS)).await;
+    }
+    if !directory.join("IMAGE1.png").is_file() {
+        let files = fs::read_dir(&directory)?
+            .map(|entry| entry.map(|entry| entry.file_name()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let state = page.evaluate("JSON.stringify({error:document.querySelector('#media-error').textContent,filename:window.downloadName,type:window.downloadedImage?.type})").await?;
+        return Err(
+            format!("PNG download did not finish: files={files:?}, state={state:?}").into(),
+        );
+    }
+    verify_display_png(
+        &page,
+        &fs::read(directory.join("IMAGE1.png"))?,
+        &image_fixture_frame(base)?,
+    )
+    .await?;
+    browser
+        .execute(SetDownloadBehaviorParams::new(
+            SetDownloadBehaviorBehavior::Deny,
+        ))
+        .await?;
+    fs::remove_dir_all(&directory)?;
+    page.evaluate(
+        "HTMLAnchorElement.prototype.click=function(){window.downloadName=this.download;}",
+    )
+    .await?;
+    click(&page, "#export-prepared").await?;
+    assert_js(&page, r#"(async()=>{const b=new Uint8Array(await downloadedImage.arrayBuffer());window.preparedFile=b;const view=new DataView(b.buffer);const crc=bytes=>{let c=0xffffffff;for(const b of bytes){c^=b;for(let n=0;n<8;n++)c=(c>>>1)^((c&1)?0xedb88320:0);}return ~c>>>0;};const colors={0:[0,0,0],1:[255,255,255],2:[255,255,0],3:[255,0,0],5:[0,0,255],6:[0,255,0]};const shown=document.querySelector('#display').getContext('2d').getImageData(0,0,1200,1600).data;for(let i=0;i<1920000;i++){const color=colors[(b[32+(i>>1)]>>((i%2)?0:4))&15];if(!color||color.some((c,n)=>shown[i*4+n]!==c)||shown[i*4+3]!==255)return false;}return downloadName==='IMAGE1.EPD'&&b.length===960032&&view.getUint32(20,true)===crc(b.slice(32))&&view.getUint32(24,true)===crc(b.slice(0,24));})()"#).await?;
+    page.evaluate("document.querySelector('#image-slot').value='2';document.querySelector('#image-slot').dispatchEvent(new Event('change'))").await?;
+    wait_js(&page, "document.querySelector('#display').hidden && document.querySelector('#export-image').disabled").await?;
+    page.evaluate(
+        "chooseFile(new File([preparedFile],'copy.EPD',{type:'application/octet-stream'}))",
+    )
+    .await?;
+    wait_js(&page, "document.querySelector('#image-name').textContent==='copy.EPD' && !document.querySelector('#export-image').disabled").await?;
+    assert_js(
+        &page,
+        "document.querySelector('#display').toDataURL()===window.validImage",
+    )
+    .await?;
+    page.evaluate("window.beforePreparedEdit=document.querySelector('#display').toDataURL();document.querySelector('#image-invert').checked=true;document.querySelector('#image-invert').dispatchEvent(new Event('change'))").await?;
+    wait_js(&page, "!document.querySelector('#export-image').disabled && document.querySelector('#display').toDataURL()!==window.beforePreparedEdit").await?;
+    page.evaluate("document.querySelector('#image-slot').value='1';document.querySelector('#image-slot').dispatchEvent(new Event('change'))").await?;
+    wait_js(
+        &page,
+        "document.querySelector('#image-name').textContent==='colors.png'",
+    )
+    .await?;
+    assert_js(&page, "!document.querySelector('#image-invert').checked && document.querySelector('#display').toDataURL()===window.validImage").await?;
+    verify_image_edit(
+        &page,
+        ImageEditFixture {
+            brightness: 40,
+            ..base
+        },
+        "image-brightness",
+    )
+    .await?;
+    click(&page, "#delete-image").await?;
+    wait_js(&page, "!document.querySelector('#undo-delete').hidden && document.querySelector('#display').hidden").await?;
+    click(&page, "#undo-delete").await?;
+    wait_js(&page, "!document.querySelector('#export-image').disabled && document.querySelector('#image-name').textContent==='colors.png'").await?;
+    assert_js(
+        &page,
+        "document.querySelector('#image-brightness').value==='40'",
+    )
+    .await?;
+    click(&page, "#reset-image").await?;
+    page.evaluate(r#"window.decodeImage=window.createImageBitmap.bind(window);window.createImageBitmap=async file=>{const bitmap=await decodeImage(file);if(file.name==='slow.png'){window.slowBitmap=bitmap;await new Promise(resolve=>{window.releaseSlow=resolve;});}return bitmap;};(async()=>chooseFile(await fixtureFile('slow.png')))();"#).await?;
+    wait_js(&page, "typeof window.releaseSlow==='function'").await?;
+    page.evaluate("(async()=>chooseFile(await fixtureFile('fast.png')))()")
+        .await?;
+    wait_js(&page, "document.querySelector('#image-name').textContent==='fast.png' && !document.querySelector('#export-image').disabled").await?;
+    page.evaluate("window.fastImage=document.querySelector('#display').toDataURL();releaseSlow()")
+        .await?;
+    wait_js(&page, "window.slowBitmap.width===0").await?;
+    assert_js(&page, "document.querySelector('#image-name').textContent==='fast.png' && document.querySelector('#display').toDataURL()===window.fastImage").await?;
+    page.evaluate(
+        "delete window.releaseSlow;(async()=>chooseFile(await fixtureFile('slow.png')))()",
+    )
+    .await?;
+    wait_js(&page, "typeof window.releaseSlow==='function'").await?;
+    page.evaluate("document.querySelector('#image-palette').value='mono';document.querySelector('#image-palette').dispatchEvent(new Event('change'));releaseSlow()").await?;
+    wait_js(&page, "document.querySelector('#image-name').textContent==='slow.png' && !document.querySelector('#export-image').disabled").await?;
+    verify_image_pixels(
+        &page,
+        ImageEditFixture {
+            palette: device_core::image::Palette::Monochrome,
+            ..base
+        },
+    )
+    .await?;
+    page.evaluate(
+        "delete window.releaseSlow;(async()=>chooseFile(await fixtureFile('slow.png')))()",
+    )
+    .await?;
+    wait_js(&page, "typeof window.releaseSlow==='function'").await?;
+    page.evaluate("document.querySelector('#image-slot').value='3';document.querySelector('#image-slot').dispatchEvent(new Event('change'))").await?;
+    wait_js(&page, "document.querySelector('#display').hidden").await?;
+    page.evaluate("releaseSlow()").await?;
+    wait_js(&page, "window.slowBitmap.width===0").await?;
+    assert_js(&page, "document.querySelector('#image-name').textContent==='' && document.querySelector('#display').hidden && document.querySelector('#export-image').disabled").await?;
+    page.evaluate("(async()=>chooseFile(await fixtureFile('replacement.png')))()")
+        .await?;
+    wait_js(&page, "document.querySelector('#image-name').textContent==='replacement.png' && !document.querySelector('#export-image').disabled").await?;
+    click(&page, "#delete-image").await?;
+    page.evaluate("(async()=>chooseFile(await fixtureFile('replacement-again.png')))()")
+        .await?;
+    wait_js(&page, "document.querySelector('#image-name').textContent==='replacement-again.png' && !document.querySelector('#export-image').disabled").await?;
+    assert_js(&page, "document.querySelector('#undo-delete').hidden").await?;
+    page.evaluate("document.querySelector('#image-slot').value='1';document.querySelector('#image-slot').dispatchEvent(new Event('change'))").await?;
+    wait_js(&page, "!document.querySelector('#export-image').disabled").await?;
+    click(&page, "#reset-image").await?;
+    page.evaluate("document.querySelectorAll('#panel-images details').forEach(e=>e.open=false);window.scrollTo(0,0)").await?;
+    save_screenshot(&page, "image-editor.png").await?;
+    page.execute(SetDeviceMetricsOverrideParams::new(390, 844, 1.0, false))
+        .await?;
+    save_screenshot(&page, "image-editor-mobile.png").await?;
+    page.close().await?;
+    Ok(())
+}
+
+async fn workspace_checks(browser: &Browser, preview_url: &str) -> BrowserResult {
+    let page = browser.new_page(preview_url).await?;
+    page.execute(SetDeviceMetricsOverrideParams::new(1280, 900, 1.0, false))
+        .await?;
+    wait_js(
+        &page,
+        "document.querySelector('#state')?.textContent.length>0",
+    )
+    .await?;
+    assert_js(&page, "document.querySelector('#tab-tools').hidden && document.querySelector('#tab-images').getAttribute('aria-selected')==='true' && document.querySelectorAll('[role=tabpanel]:not([hidden])').length===1 && document.querySelector('#panel-images').getAttribute('aria-labelledby')==='tab-images' && document.querySelector('#empty-image').getClientRects().length>0 && document.querySelector('#export-image').disabled && document.querySelector('#send-image').disabled").await?;
+    for (key, selected) in [
+        ("ArrowRight", "daily"),
+        ("ArrowRight", "device"),
+        ("ArrowRight", "images"),
+        ("ArrowLeft", "device"),
+        ("Home", "images"),
+        ("End", "device"),
+    ] {
+        let active = page
+            .evaluate("document.querySelector('[role=tab][aria-selected=true]').id")
+            .await?
+            .into_value::<String>()?;
+        page.find_element(format!("#{active}"))
+            .await?
+            .focus()
+            .await?
+            .press_key(key)
+            .await?;
+        assert_js(&page, &format!("document.activeElement.id==='tab-{selected}' && document.querySelector('#panel-{selected}').hidden===false && [...document.querySelectorAll('[role=tab]')].filter(e=>e.tabIndex===0).length===1 && document.querySelectorAll('[role=tabpanel]:not([hidden])').length===1")).await?;
+    }
+    click(&page, "#tab-daily").await?;
+    page.find_element("#tab-daily")
+        .await?
+        .focus()
+        .await?
+        .press_key("Tab")
+        .await?;
+    assert_js(&page, "document.activeElement.id==='panel-daily'").await?;
+    page.find_element("#panel-daily")
+        .await?
+        .press_key("Tab")
+        .await?;
+    assert_js(&page, "document.activeElement.id==='daily-screen'").await?;
+    page.evaluate("window.RealDate=Date;window.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[2028,1,29,23,45,56]));}};document.querySelector('#tab-images').click();document.querySelector('#tab-daily').click();document.querySelector('#daily-screen').value='calendar';document.querySelector('#daily-screen').dispatchEvent(new Event('change'))").await?;
+    assert_js(&page, "document.querySelector('#state').textContent.includes('Clock: 2028-02-29 23:45:56') && document.querySelector('#state').textContent.includes('Calendar: February 2028')").await?;
+    page.evaluate("document.querySelector('#task-text').value='Draft task';document.querySelector('#note-text').value='Draft note'").await?;
+    click(&page, "#tab-device").await?;
+    assert_js(&page, "document.querySelector('#preview-pane').hidden && !document.querySelector('#panel-device').hidden && ['measurements','device-command-form','device-log','events','completion-help'].every(id=>!document.getElementById(id).getClientRects().length)").await?;
+    save_screenshot(&page, "device-workspace.png").await?;
+    click(&page, "#tab-daily").await?;
+    assert_js(&page, "document.querySelector('#task-text').value==='Draft task' && document.querySelector('#note-text').value==='Draft note'").await?;
+    click(&page, "#task-save").await?;
+    click(&page, "#note-save").await?;
+    save_screenshot(&page, "daily-workspace.png").await?;
+    for width in [320, 768, 1280] {
+        page.execute(SetDeviceMetricsOverrideParams::new(width, 844, 1.0, false))
+            .await?;
+        for view in ["images", "daily", "device"] {
+            click(&page, &format!("#tab-{view}")).await?;
+            page.evaluate("window.scrollTo(0,0)").await?;
+            assert_js(&page, "document.documentElement.scrollWidth<=innerWidth && [...document.querySelectorAll('button,input:not([type=checkbox]):not([type=radio]),select,summary,label:has(input[type=checkbox])')].filter(e=>e.getClientRects().length).every(e=>{const r=e.getBoundingClientRect();return r.width>=48&&r.height>=48;})").await?;
+            if view == "images" {
+                assert_js(&page, "document.querySelector('#image-file').getBoundingClientRect().bottom<=innerHeight").await?;
+            }
+            page.evaluate("document.documentElement.style.fontSize='200%'")
+                .await?;
+            assert_js(&page, "document.documentElement.scrollWidth<=innerWidth && parseFloat(getComputedStyle(document.querySelector('[role=tab]')).fontSize)>=36").await?;
+            page.evaluate("document.documentElement.style.fontSize='';{const style=document.createElement('style');style.id='spacing-test';style.textContent='* {line-height:1.5!important;letter-spacing:.12em!important;word-spacing:.16em!important;}p{margin-bottom:2em!important;}';document.head.append(style);}").await?;
+            assert_js(&page, "document.documentElement.scrollWidth<=innerWidth && [...document.querySelectorAll('button')].filter(e=>e.getClientRects().length).every(e=>e.scrollWidth<=e.clientWidth+1&&e.scrollHeight<=e.clientHeight+1)").await?;
+            page.evaluate("document.querySelector('#spacing-test').remove()")
+                .await?;
+        }
+    }
+    page.close().await?;
+    println!("Task views, keyboard navigation, draft preservation, and responsive states passed");
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct ImageEditFixture {
+    rotation: device_core::geometry::Rotation,
+    fit: device_core::image::Fit,
+    anchor: device_core::image::Anchor,
+    palette: device_core::image::Palette,
+    dither: device_core::image::Dither,
+    brightness: i16,
+    contrast: u16,
+    saturation: u16,
+    invert: bool,
+}
+
+impl Default for ImageEditFixture {
+    fn default() -> Self {
+        Self {
+            rotation: device_core::geometry::Rotation::Portrait,
+            fit: device_core::image::Fit::Contain,
+            anchor: device_core::image::Anchor::Center,
+            palette: device_core::image::Palette::SixColor,
+            dither: device_core::image::Dither::Ordered,
+            brightness: 0,
+            contrast: 100,
+            saturation: 100,
+            invert: false,
+        }
+    }
+}
+
+async fn verify_image_edit(page: &Page, fixture: ImageEditFixture, field: &str) -> BrowserResult {
+    show_control(page, &format!("#{field}")).await?;
+    let settings = [
+        ("rotation", (fixture.rotation as u8).to_string()),
+        ("image-fit", (fixture.fit as u8).to_string()),
+        ("image-anchor", (fixture.anchor as u8).to_string()),
+        (
+            "image-palette",
+            if fixture.palette == device_core::image::Palette::Monochrome {
+                "mono"
+            } else {
+                "six"
+            }
+            .into(),
+        ),
+        (
+            "image-dither",
+            match fixture.dither {
+                device_core::image::Dither::None => "none",
+                device_core::image::Dither::Ordered => "ordered",
+                device_core::image::Dither::FloydSteinberg => "diffusion",
+            }
+            .into(),
+        ),
+        ("image-brightness", fixture.brightness.to_string()),
+        ("image-contrast", fixture.contrast.to_string()),
+        ("image-saturation", fixture.saturation.to_string()),
+        ("image-invert", fixture.invert.to_string()),
+    ];
+    page.evaluate(format!("window.editGeneration=document.querySelector('#display').dataset.imageGeneration;for(const [id,value] of {}){{const e=document.getElementById(id);if(e.type==='checkbox')e.checked=value==='true';else e.value=value;}}{{const e=document.getElementById({});e.focus();e.dispatchEvent(new Event(e.type==='number'?'input':'change',{{bubbles:true}}));}}", serde_json::to_string(&settings)?, serde_json::to_string(field)?)).await?;
+    wait_js(page, "document.querySelector('#display').dataset.imageGeneration!==window.editGeneration && !document.querySelector('#export-image').disabled").await?;
+    assert_js(
+        page,
+        &format!(
+            "document.activeElement.id==={} && !document.querySelector('#media-error').textContent",
+            serde_json::to_string(field)?
+        ),
+    )
+    .await?;
+    verify_image_pixels(page, fixture).await
+}
+
+fn image_fixture_frame(fixture: ImageEditFixture) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+    use device_core::{
+        geometry::FRAME_BYTES,
+        image::{Conversion, Placement, RgbaImage, Size},
+    };
+    let mut source = Vec::new();
+    for y in 0..24 {
+        for x in 0..32 {
+            source.extend(if (x + y) % 11 == 0 {
+                [0, 0, 0, 0]
+            } else {
+                [
+                    ((x * 37 + y * 13) % 256) as u8,
+                    ((x * 9 + y * 41) % 256) as u8,
+                    ((x * 53 + y * 7) % 256) as u8,
+                    255,
+                ]
+            });
+        }
+    }
+    let size = Size::new(32, 24).ok_or("fixture size")?;
+    let (width, height) = fixture.rotation.dimensions();
+    let mut frame = vec![0x11; FRAME_BYTES];
+    RgbaImage::new(size, &source)
+        .ok_or("fixture pixels")?
+        .render(
+            &mut frame,
+            fixture.rotation,
+            Placement::new(
+                size,
+                Size::new(width, height).ok_or("fixture target")?,
+                fixture.fit,
+                fixture.anchor,
+            ),
+            Conversion::new(
+                fixture.palette,
+                fixture.dither,
+                fixture.brightness,
+                fixture.contrast,
+                fixture.saturation,
+                fixture.invert,
+            )
+            .ok_or("fixture conversion")?,
+            &mut vec![[0; 3]; 2 * (usize::from(width) + 2)],
+        )
+        .map_err(|_| "fixture render")?;
+    Ok(frame)
+}
+
+async fn verify_image_pixels(page: &Page, fixture: ImageEditFixture) -> BrowserResult {
+    let frame = image_fixture_frame(fixture)?;
+    let expected = format!("{:x}", Sha256::digest(device_preview::rgba(&frame)));
+    let actual: String = page.evaluate("(async()=>{const canvas=document.querySelector('#display');const digest=await crypto.subtle.digest('SHA-256',canvas.getContext('2d').getImageData(0,0,1200,1600).data);return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');})()").await?.into_value()?;
+    if actual != expected {
+        return Err(
+            format!("image editing pixels differ: actual={actual}, expected={expected}").into(),
+        );
+    }
+    Ok(())
+}
+
+async fn save_screenshot(page: &Page, name: &str) -> BrowserResult {
+    fs::create_dir_all("target/screenshots")?;
+    fs::write(
+        format!("target/screenshots/{name}"),
+        page.screenshot(
+            ScreenshotParams::builder()
+                .format(CaptureScreenshotFormat::Png)
+                .full_page(false)
+                .build(),
+        )
+        .await?,
+    )?;
+    Ok(())
+}
+
 async fn click(page: &Page, selector: &str) -> BrowserResult {
+    show_control(page, selector).await?;
     page.find_element(selector).await?.click().await?;
+    Ok(())
+}
+
+async fn show_control(page: &Page, selector: &str) -> BrowserResult {
+    let tab: String = page.evaluate(format!(
+        "(()=>{{const control=document.querySelector({});if(control?.closest('#preview-controls'))return 'tab-tools';if(control?.closest('#image-actions,#image-source'))return 'tab-images';return control?.closest('[role=tabpanel]')?.getAttribute('aria-labelledby')??'';}})()",
+        serde_json::to_string(selector)?
+    )).await?.into_value()?;
+    if !tab.is_empty()
+        && page
+            .evaluate(format!(
+                "document.getElementById({}).getAttribute('aria-selected')!=='true'",
+                serde_json::to_string(&tab)?
+            ))
+            .await?
+            .value()
+            == Some(&serde_json::Value::Bool(true))
+    {
+        page.find_element(format!("#{tab}")).await?.click().await?;
+    }
+    let summaries: Vec<String> = page.evaluate(format!("(()=>{{const summaries=[];let control=document.querySelector({});while(control){{if(control.tagName==='DETAILS'&&!control.open){{const summary=control.querySelector(':scope > summary');if(!summary.id){{window.summarySequence=(window.summarySequence??0)+1;summary.id='test-summary-'+window.summarySequence;}}summaries.push(summary.id);}}control=control.parentElement;}}return summaries.reverse();}})()", serde_json::to_string(selector)?)).await?.into_value()?;
+    for summary in summaries {
+        page.find_element(format!("#{summary}"))
+            .await?
+            .click()
+            .await?;
+    }
     Ok(())
 }
 
@@ -101,11 +854,7 @@ pub fn check() -> BrowserResult {
 }
 
 async fn check_async() -> BrowserResult {
-    let _server = Server(
-        Command::new(std::env::current_exe()?)
-            .args(["serve", "8081"])
-            .spawn()?,
-    );
+    let (_server, preview_url) = Server::start().await?;
     let (mut browser, mut handler) = Browser::launch(
         BrowserConfig::builder()
             .window_size(DESKTOP_WIDTH, DESKTOP_HEIGHT)
@@ -118,14 +867,16 @@ async fn check_async() -> BrowserResult {
         }
         Ok::<(), chromiumoxide::error::CdpError>(())
     });
-    let result = exercise(&browser).await;
+    let result = exercise(&browser, &preview_url).await;
     browser.close().await?;
     events.await??;
     result
 }
 
-async fn exercise(browser: &Browser) -> BrowserResult {
-    let page = browser.new_page(PREVIEW_URL).await?;
+async fn exercise(browser: &Browser, preview_url: &str) -> BrowserResult {
+    workspace_checks(browser, preview_url).await?;
+    live_image_checks(browser, preview_url).await?;
+    let page = browser.new_page(format!("{preview_url}/?tools")).await?;
     page.execute(SetDeviceMetricsOverrideParams::new(
         i64::from(DESKTOP_WIDTH),
         i64::from(DESKTOP_HEIGHT),
@@ -166,6 +917,63 @@ async fn exercise(browser: &Browser) -> BrowserResult {
     .await?;
     assert_js(&page, "document.querySelector('#state').textContent.includes('23.45 C') && document.querySelector('#update-status').getAttribute('role') === 'status'").await?;
     assert_js(&page, "['previous','refresh','next'].every(id => { const r=document.getElementById(id).getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })").await?;
+    page.evaluate("document.querySelector('#task-text').value='Buy groceries'")
+        .await?;
+    show_control(&page, "#task-text").await?;
+    page.find_element("#task-text")
+        .await?
+        .focus()
+        .await?
+        .press_key("Enter")
+        .await?;
+    assert_js(&page, "document.querySelector('#state').textContent.includes('1 [ ] Buy groceries') && document.querySelector('#daily-feedback').textContent==='Checklist updated.' && !document.querySelector('#task-toggle').disabled").await?;
+    page.evaluate("document.querySelector('#screen').value='checklist'; document.querySelector('#screen').dispatchEvent(new Event('change'))").await?;
+    click(&page, "#refresh").await?;
+    assert_js(&page, "document.querySelector('#state').textContent.includes('1 [x] Buy groceries') && document.querySelector('#refresh').textContent==='Reopen task' && document.querySelector('#task-toggle').textContent==='Reopen task'").await?;
+    click(&page, "#hold-next").await?;
+    assert_js(&page, "document.querySelector('#state').textContent.includes('Selected task: 2') && document.querySelector('#refresh').textContent==='Refresh'").await?;
+    show_control(&page, "#note-text").await?;
+    for note in ["clear", "set alarm", "set clear"] {
+        page.evaluate(format!(
+            "document.querySelector('#note-text').value={}; document.querySelector('#note-editor').requestSubmit()",
+            serde_json::to_string(note)?
+        ))
+        .await?;
+        assert_js(&page, &format!(
+            "document.querySelector('#note-text').value==={} && document.querySelector('#state').textContent.includes({})",
+            serde_json::to_string(note)?,
+            serde_json::to_string(&format!("Note: {note}"))?
+        ))
+        .await?;
+    }
+    page.evaluate("document.querySelector('#note-text').value='Return library books.'; document.querySelector('#note-editor').requestSubmit()").await?;
+    assert_js(&page, "document.querySelector('#state').textContent.includes('Note: Return library books.') && document.querySelector('#daily-feedback').textContent==='Note updated.'").await?;
+    page.evaluate("document.querySelector('#events').closest('details').open=true")
+        .await?;
+    click(&page, "#record").await?;
+    show_control(&page, "#task-text").await?;
+    page.evaluate("window.dailyFrame=document.querySelector('#display').toDataURL(); window.dailyRecording=document.querySelector('#events').value; document.querySelector('#task-text').value='x'.repeat(49); document.querySelector('#task-editor').requestSubmit()").await?;
+    assert_js(&page, "document.activeElement.id==='task-text' && document.activeElement.getAttribute('aria-invalid')==='true' && document.querySelector('#task-text-error').textContent.includes('48') && document.querySelector('#display').toDataURL()===window.dailyFrame").await?;
+    click(&page, "#record").await?;
+    assert_js(
+        &page,
+        "document.querySelector('#events').value===window.dailyRecording",
+    )
+    .await?;
+    show_control(&page, "#note-text").await?;
+    page.evaluate("document.querySelector('#note-text').value='日本語'; document.querySelector('#note-editor').requestSubmit()").await?;
+    assert_js(&page, "document.activeElement.id==='note-text' && document.querySelector('#note-text-error').textContent.includes('ASCII') && document.querySelector('#display').toDataURL()===window.dailyFrame").await?;
+    page.evaluate("document.querySelector('#screen').value='calendar'; document.querySelector('#screen').dispatchEvent(new Event('change'))").await?;
+    click(&page, "#hold-next").await?;
+    assert_js(&page, "document.querySelector('#state').textContent.includes('Calendar: December 2026') && document.querySelector('#refresh').textContent==='Today'").await?;
+    click(&page, "#refresh").await?;
+    assert_js(
+        &page,
+        "document.querySelector('#state').textContent.includes('Calendar: November 2026')",
+    )
+    .await?;
+    click(&page, "#reset-example").await?;
+    assert_js(&page, "!document.querySelector('[aria-invalid=true]') && document.querySelector('#task-text').value==='' && document.querySelector('#note-text').value===''").await?;
     page.evaluate("document.querySelector('#events').closest('details').open=true")
         .await?;
     click(&page, "#apply").await?;
@@ -220,7 +1028,7 @@ async fn exercise(browser: &Browser) -> BrowserResult {
     assert_js(&page, "document.querySelector('#error').textContent === '' && document.querySelector('#form-error').textContent === '' && document.querySelector('#form-feedback').textContent==='Measurements applied.' && !document.querySelector('[aria-invalid=true]')").await?;
     assert_js(
         &page,
-        "document.querySelector('#state').textContent.startsWith('Diagnostics')",
+        "document.querySelector('#state').textContent.startsWith('Calendar')",
     )
     .await?;
     page.find_element("#previous")
@@ -249,7 +1057,7 @@ async fn exercise(browser: &Browser) -> BrowserResult {
         .await?
         .press_key("ArrowRight")
         .await?;
-    assert_js(&page, "document.querySelector('#wait').checked && !document.querySelector('#immediate').checked && document.querySelector('#completion-help').textContent.includes('Refresh')").await?;
+    assert_js(&page, "document.querySelector('#wait').checked && !document.querySelector('#immediate').checked && document.querySelector('#completion-help').textContent.includes('Hold middle')").await?;
     page.find_element("#wait")
         .await?
         .press_key("ArrowLeft")
@@ -274,7 +1082,7 @@ async fn exercise(browser: &Browser) -> BrowserResult {
     click(&page, "#immediate").await?;
     assert_js(
         &page,
-        "document.querySelector('#state').textContent.includes('panel timeout') && document.querySelector('#display').toDataURL() === window.presentedBeforeHold && document.querySelector('#complete').disabled && document.querySelector('#update-status').textContent.includes('Refresh to retry')",
+        "document.querySelector('#state').textContent.includes('panel timeout') && document.querySelector('#display').toDataURL() === window.presentedBeforeHold && document.querySelector('#complete').disabled && document.querySelector('#update-status').textContent.includes('Hold middle to retry')",
     )
     .await?;
     click(&page, "#refresh").await?;
@@ -300,7 +1108,7 @@ async fn exercise(browser: &Browser) -> BrowserResult {
     assert_js(&page, "document.querySelector('#state').textContent.startsWith('Device Status') && document.querySelector('#state').textContent.includes('23.45 C') && document.querySelector('#rotation').value === '0' && document.querySelector('#error').textContent === ''").await?;
     assert_js(&page, "[...document.querySelectorAll('*')].every(e => { const s=getComputedStyle(e); return ['rgb(0, 0, 0)','rgb(255, 255, 255)'].includes(s.color) && ['rgb(0, 0, 0)','rgb(255, 255, 255)','rgba(0, 0, 0, 0)'].includes(s.backgroundColor) && s.opacity==='1' && s.boxShadow==='none' && s.textShadow==='none' && s.filter==='none' && s.backgroundImage==='none' && s.mixBlendMode==='normal'; })").await?;
     assert_js(&page, "performance.getEntriesByType('resource').every(e => new URL(e.name).origin === location.origin)").await?;
-    assert_js(&page, "[...document.querySelectorAll('button,input:not([type=radio]),select,summary,.choices label')].filter(e=>e.getClientRects().length).every(e=>{const r=e.getBoundingClientRect();return r.width>=44 && r.height>=44})").await?;
+    assert_js(&page, "[...document.querySelectorAll('button,input:not([type=radio]):not([type=checkbox]),select,summary,.choices label,label:has(input[type=checkbox])')].filter(e=>e.getClientRects().length).every(e=>{const r=e.getBoundingClientRect();return r.width>=44 && r.height>=44})").await?;
     let fixture = fs::read_to_string("verification/fixtures/status.events")?;
     let mut native = device_preview::Preview::default();
     native.replay(&fixture)?;
@@ -392,6 +1200,44 @@ async fn exercise(browser: &Browser) -> BrowserResult {
         .await?,
     )?;
     assert_js(&page, "['previous','refresh','next'].every(id => { const r=document.getElementById(id).getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })").await?;
-    println!("Browser controls, keyboard submission, field errors and focus, completion failure recovery, labels, monochrome styles, narrow layout, offline resources, atomic replay, 60 native/Wasm frame comparisons, and decoded display PNG integrity with crop and pixel-change rejection passed; sha256={hash}");
+    for width in [320, 768, 1280] {
+        page.execute(SetDeviceMetricsOverrideParams::new(
+            width,
+            i64::from(MOBILE_HEIGHT),
+            1.0,
+            false,
+        ))
+        .await?;
+        assert_js(&page, "document.documentElement.scrollWidth <= innerWidth").await?;
+        page.evaluate("document.documentElement.style.fontSize='200%'")
+            .await?;
+        assert_js(&page, "document.documentElement.scrollWidth <= innerWidth && parseFloat(getComputedStyle(document.querySelector('#task-save')).fontSize)>=36").await?;
+        page.evaluate("document.querySelector('#note-text').value='Readable note.'")
+            .await?;
+        click(&page, "#note-save").await?;
+        assert_js(
+            &page,
+            "document.querySelector('#state').textContent.includes('Note: Readable note.')",
+        )
+        .await?;
+        page.evaluate("document.documentElement.style.fontSize=''; { const style=document.createElement('style'); style.id='spacing-override'; style.textContent='* { line-height:1.5!important; letter-spacing:.12em!important; word-spacing:.16em!important; } p { margin-bottom:2em!important; }'; document.head.append(style); }").await?;
+        assert_js(&page, "document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('button')].filter(e=>e.getClientRects().length).every(e=>e.scrollHeight<=e.clientHeight+1 && e.scrollWidth<=e.clientWidth+1)").await?;
+        page.evaluate("document.querySelector('#spacing-override').remove()")
+            .await?;
+    }
+    page.execute(SetDeviceMetricsOverrideParams::new(
+        320,
+        i64::from(MOBILE_HEIGHT),
+        1.0,
+        false,
+    ))
+    .await?;
+    page.evaluate("document.body.style.minWidth='640px'")
+        .await?;
+    assert_js(&page, "document.documentElement.scrollWidth>innerWidth").await?;
+    page.evaluate("document.body.style.minWidth=''").await?;
+    assert_js(&page, "document.documentElement.scrollWidth<=innerWidth").await?;
+    media_checks(browser, preview_url).await?;
+    println!("Browser daily editing, image conversion, USB control, field errors and focus, display failure recovery, labels, monochrome styles, 320-pixel reflow, 200-percent text, spacing overrides, offline resources, atomic replay, 140 native/Wasm frame comparisons, and display PNG integrity passed; sha256={hash}");
     Ok(())
 }

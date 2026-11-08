@@ -519,6 +519,7 @@ dependencies = [
  "esp-storage",
  "heapless 0.9.3",
  "nb 1.1.0",
+ "portable-atomic",
  "static_cell",
  "t133a01",
  "trouble-host",

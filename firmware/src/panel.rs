@@ -59,11 +59,17 @@ impl Hardware {
     pub fn sleep(&mut self, seconds: u32) {
         self.stop();
         self.sd_enable.set_low();
-        self.low_power.set_wakeup_deadline(
-            esp_hal::time::Instant::now() + esp_hal::time::Duration::from_secs(u64::from(seconds)),
-        );
-        self.low_power
-            .sleep_deep_with_rejection(RtcSleepConfig::default());
+        if seconds == 0 {
+            self.low_power.clear_wakeup_deadline();
+        } else {
+            self.low_power.set_wakeup_deadline(
+                esp_hal::time::Instant::now()
+                    + esp_hal::time::Duration::from_secs(u64::from(seconds)),
+            );
+        }
+        let mut config = RtcSleepConfig::default();
+        config.set_rtc_fastmem_pd_en(false);
+        self.low_power.sleep_deep_with_rejection(config);
     }
     pub fn sd_diagnose(&mut self) -> StorageStatus {
         if self.sd_detect.is_high() {
@@ -180,6 +186,27 @@ impl device_runtime::tasks::BusIo for Hardware {
     }
     fn sd_diagnose(&mut self) -> StorageStatus {
         Hardware::sd_diagnose(self)
+    }
+    async fn sd_import(
+        &mut self,
+        id: device_core::media::ImageId,
+        bytes: &mut [u8],
+    ) -> Result<device_core::media::ImageDescriptor, e1004_bsp::storage::StorageError> {
+        use e1004_bsp::storage::StorageError;
+        if self.sd_detect.is_high() {
+            return Err(StorageError::Absent);
+        }
+        self.deselect();
+        self.sd_enable.set_high();
+        let mut delay = Delay::new();
+        embedded_hal::delay::DelayNs::delay_ms(&mut delay, SD_POWER_SETTLE_MS);
+        let device =
+            embedded_hal_bus::spi::ExclusiveDevice::new(&mut self.spi, &mut self.sd_cs, delay)
+                .map_err(|_| StorageError::Io)?;
+        let card = embedded_sdmmc::SdCard::new(device, Delay::new());
+        e1004_bsp::fat::read_image(card, DiagnosticClock, id, bytes, embassy_futures::yield_now)
+            .await
+            .map_err(|_| StorageError::Io)
     }
     fn deep_sleep(&mut self, seconds: u32) -> device_runtime::tasks::SleepOutcome {
         self.sleep(seconds);

@@ -23,7 +23,7 @@ const INPUTS: [Input; 8] = [
     Input::Elapse,
 ];
 const DEPTH: usize = 6;
-const SCREEN_COUNT: u8 = 3;
+const SCREEN_COUNT: u8 = 7;
 const TIMEOUT_MS: u64 = 120_000;
 
 #[derive(Clone, Copy, Default)]
@@ -43,7 +43,7 @@ impl Model {
             Input::Previous | Input::Next | Input::Refresh => {
                 self.desired = (self.desired
                     + match input {
-                        Input::Previous => 2,
+                        Input::Previous => SCREEN_COUNT - 1,
                         Input::Next => 1,
                         _ => 0,
                     })
@@ -91,8 +91,12 @@ impl Model {
 fn screen(index: u8) -> ScreenId {
     match index {
         0 => ScreenId::Status,
-        1 => ScreenId::Diagnostics,
-        2 => ScreenId::Drawing,
+        1 => ScreenId::Calendar,
+        2 => ScreenId::Checklist,
+        3 => ScreenId::Notes,
+        4 => ScreenId::Diagnostics,
+        5 => ScreenId::Drawing,
+        6 => ScreenId::Gallery,
         _ => unreachable!(),
     }
 }

@@ -46,6 +46,9 @@ The source binding gate parses the concrete hardware initialization and checks s
 
 A screen receives an immutable `App` and draws into `Framebuffer` through `Screen::draw`.
 `DeviceStatus`, `DiagnosticsScreen`, and `DrawingScreen` show the extension point.
+`CalendarScreen`, `ChecklistScreen`, and `NotesScreen` provide daily offline use.
+The [daily use guide](../../../../docs/usage/daily-use.md) describes setup, controls, persistence, and preview backup.
+The [image guide](../../../../docs/usage/color-media.md) describes color conversion, browser USB control, card import, and offline Gallery use.
 Add a `ScreenId` variant, handle navigation exhaustively, and dispatch the screen in `device_ui::render` when adding a page.
 Put external reads in an adapter and pass a `TelemetrySnapshot` through `AppEvent::Telemetry`.
 Keep host clock and network reads outside screens.
@@ -59,6 +62,15 @@ Refresh requests during measurement share that operation.
 A timeout enters the failed state and refuses a late success notification.
 Storage and measurement work must finish before sleep.
 The default automatic refresh interval is 900 seconds.
+Gallery uses its slideshow interval for timer wake, and a paused populated Gallery clears the wake deadline.
+Settings format 4 adds gallery preferences while formats 1 through 3 remain readable.
+Prepared image files use their own versioned 32-byte header and exact packed pixel payload.
+Use `esp_storage::FlashStorage::write_nor` after erasing a staging image slot, because `write` erases affected sectors during each call.
+Keep buffered `read` for destinations in external working memory.
+Automatic slide advancement must not change `Gallery::persistent_settings`.
+The bus owner stores the current selection in a checksummed retained snapshot before deep sleep.
+The [retention decision](../../../../docs/adr/retain-automatic-gallery-selection-outside-settings-flash.md) defines admission after wake and the power-loss fallback.
+Never replace an unreadable gallery index with a successful empty image.
 The next periodic update retries a failed panel after the driver has stopped it.
 The firmware retains a pending bus request when the bounded queue is full and keeps consuming app events.
 Panel transfers yield after each controller row so input and measurement tasks can run during a refresh.
@@ -73,14 +85,29 @@ The [task tests](../../../../crates/device-runtime/tests/e2e.rs) run these produ
 ## Preview
 
 `mise x -- just sim` opens a desktop window with Left, Space, and Right as the three buttons.
+Shift with a button key performs the corresponding held gesture.
+The simulator recipe preserves argument boundaries through [Just positional arguments](https://just.systems/man/en/positional-arguments.html).
 The simulator also accepts `--png PATH`, `--raw PATH`, `--replay PATH`, and repeated `--event COMMAND` arguments.
 `mise x -- just web` serves the browser preview at the printed loopback address.
+The server prefers port 8080 and requests an available port when that address is in use.
+Keep the bound listener until the HTTP server takes ownership, and print its actual address from [TcpListener::local_addr](https://doc.rust-lang.org/std/net/struct.TcpListener.html#method.local_addr).
+Browser checks request an OS-assigned port and read the server's announced address before navigation.
 The browser imports generated `wasm-bindgen` glue and runs event handling in Rust.
 Normal preview operation needs no external script, image, font, or network API.
+The browser opens Images, Daily, and Device as separate task workspaces.
+The optional `?tools` address reveals development controls.
+Normal calendar previews read local browser time through the adapter, while tools keep fixed example values.
+Image edits keep an original source and settings per image.
+Separate request generations gate file decoding and coalesced conversion through the shared presentation authority.
+The live image editor draws the prepared draft independently of simulated panel completion.
+Normal downloads use `PNG`, while Save for SD card exports the prepared device format.
+Keep both saved files and outgoing device snapshots consistent with the visible image.
 
 Preview commands use one event per line.
 The status fixture is an executable example of clock, temperature, humidity, battery, charging, and SD input.
 `previous`, `refresh`, and `next` dispatch buttons.
+`screen NAME`, `hold previous`, `hold refresh`, and `hold next` expose direct navigation and contextual controls.
+`task set N TEXT`, `task done N`, `task open N`, `task toggle N`, `task clear N`, `note set TEXT`, and `note clear` edit bounded daily content through the shared core parser.
 `wait`, `complete`, `timeout`, and `immediate` control display completion.
 `tick MILLISECONDS` supplies monotonic time and `rotation 0` through `rotation 3` select orientation.
 Measurement values accept `unknown`, `missing`, and `fault` as explicit states.
@@ -124,6 +151,7 @@ Controls avoid names that shadow methods under the [native form interface](https
 Display feedback uses a separate [status message](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html) instead of announcing the entire diagnostic record after every action.
 Optional controls use the native [details element](https://html.spec.whatwg.org/multipage/interactive-elements.html#the-details-element).
 Black and white, size, weight, spacing, and rules communicate hierarchy.
+The browser checks [320-pixel reflow](https://www.w3.org/WAI/WCAG22/Understanding/reflow.html), [200-percent text enlargement](https://www.w3.org/WAI/WCAG22/Understanding/resize-text.html), and [text spacing overrides](https://www.w3.org/WAI/WCAG22/Understanding/text-spacing.html) while preserving daily editing.
 
 ## Console and persistence
 
@@ -148,8 +176,13 @@ The status response includes the current policy and saved screen.
 `ble on` and `ble off` require the `ble` feature.
 Supply credentials over the serial connection and keep them out of logs and replay fixtures.
 
-Settings format 2 stores a format byte, generation, interval, orientation, resume policy, screen, `CRC-32` checksum, and commit marker in 24 bytes.
-Format 1 remains readable and supplies the default policy and Status screen.
+Settings format 4 stores configuration, daily content, selected task, viewed month, and gallery preferences in 512 bytes with a `CRC-32` checksum and final commit marker.
+Formats 1 and 2 remain readable and supply empty daily content and default interaction positions.
+Format 1 supplies the default policy and Status screen.
+Format 3 supplies the default gallery preferences.
+Daily content accepts six 48-character task labels and a 160-character note in printable ASCII.
+Preserve a newer edit when the runtime acknowledges an earlier save.
+Keep the task selection and viewed month across deep sleep so a later press continues the same operation.
 After quiescence, the runtime saves changed navigation once before sleep.
 Unchanged timer wakes perform no settings writes.
 An unsuccessful save reports `SettingsStorage` without changing the SD card status.

@@ -8,10 +8,12 @@ pub enum Command<'a> {
     SetRtc(&'a str),
     SetInterval(u32),
     Resume(device_core::settings::ResumePolicy),
+    Device(device_core::commands::DeviceCommand),
     WifiScan,
     WifiConnect { ssid: &'a str, password: &'a str },
     WifiDisconnect,
     Ble(bool),
+    Media(crate::media::MediaCommand),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -45,6 +47,16 @@ pub fn parse(line: &str) -> Result<Command<'_>, ParseError> {
         };
     }
     let line = line.trim();
+    if let Some(value) = line.strip_prefix("image ") {
+        return crate::media::parse_command(value)
+            .map(Command::Media)
+            .ok_or(ParseError::Invalid);
+    }
+    if let Some(command) = device_core::commands::parse(line) {
+        return command
+            .map(Command::Device)
+            .map_err(|_| ParseError::Invalid);
+    }
     match line {
         "help" => Ok(Command::Help),
         "status" => Ok(Command::Status),

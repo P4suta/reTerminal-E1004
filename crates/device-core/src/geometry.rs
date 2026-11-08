@@ -16,6 +16,16 @@ pub enum Rotation {
 }
 
 impl Rotation {
+    pub const fn from_code(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Portrait),
+            1 => Some(Self::Landscape),
+            2 => Some(Self::InvertedPortrait),
+            3 => Some(Self::InvertedLandscape),
+            _ => None,
+        }
+    }
+
     pub const fn dimensions(self) -> (u16, u16) {
         match self {
             Self::Portrait | Self::InvertedPortrait => (WIDTH, HEIGHT),
@@ -46,6 +56,40 @@ pub enum Color {
     Red = 3,
     Blue = 5,
     Green = 6,
+}
+
+impl Color {
+    pub const ALL: [Self; 6] = [
+        Self::Black,
+        Self::White,
+        Self::Yellow,
+        Self::Red,
+        Self::Blue,
+        Self::Green,
+    ];
+
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Black),
+            1 => Some(Self::White),
+            2 => Some(Self::Yellow),
+            3 => Some(Self::Red),
+            5 => Some(Self::Blue),
+            6 => Some(Self::Green),
+            _ => None,
+        }
+    }
+
+    pub const fn rgb(self) -> [u8; 3] {
+        match self {
+            Self::Black => [0, 0, 0],
+            Self::White => [255, 255, 255],
+            Self::Yellow => [255, 255, 0],
+            Self::Red => [255, 0, 0],
+            Self::Blue => [0, 0, 255],
+            Self::Green => [0, 255, 0],
+        }
+    }
 }
 
 pub fn pixel_address(x: u16, y: u16) -> Option<(usize, bool)> {

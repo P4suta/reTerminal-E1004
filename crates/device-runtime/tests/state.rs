@@ -111,3 +111,57 @@ fn only_a_successful_current_transfer_publishes_its_snapshot() {
     system.finish_display(3, Ok(()));
     assert_eq!(system.presented(), Some(changed));
 }
+
+#[test]
+fn configuration_requests_merge_latest_controls_with_current_content_and_ignore_earlier_acknowledgements(
+) {
+    use device_core::{
+        app::{App, ScreenId},
+        daily::{DailyEdit, Text},
+        settings::Settings,
+    };
+    let system = System::new(Radios {
+        wifi: false,
+        ble: false,
+    });
+    assert_eq!(system.configuration_settings(), Settings::default());
+    let initial = App::default();
+    system.publish(initial);
+    let first = Settings {
+        refresh_seconds: 600,
+        ..initial.settings()
+    }
+    .configuration();
+    let latest = Settings {
+        rotation: 3,
+        ..initial.settings().with_configuration(first, initial.screen)
+    }
+    .configuration();
+    let first_request = system.reserve_configuration(first).unwrap();
+    let latest_request = system.reserve_configuration(latest).unwrap();
+    system.request_configuration(first_request);
+    system.request_configuration(latest_request);
+    system.acknowledge_configuration(first_request.id());
+    let mut app = App {
+        screen: ScreenId::Checklist,
+        ..initial
+    };
+    app.daily = app
+        .daily
+        .edit(DailyEdit::Note(Text::new("Latest content").unwrap()));
+    system.publish(app);
+    let pending = system.configuration_settings();
+    assert_eq!(pending.configuration(), latest);
+    assert_eq!(pending.daily, app.daily);
+    assert_eq!(pending.screen, ScreenId::Checklist);
+    app.refresh_seconds = latest.refresh_seconds;
+    app.rotation = device_core::geometry::Rotation::InvertedLandscape;
+    system.publish(app);
+    system.acknowledge_configuration(latest_request.id());
+    assert_eq!(system.configuration_settings(), app.settings());
+    let reverted = system.reserve_configuration(first).unwrap();
+    assert_ne!(reverted.id(), first_request.id());
+    system.request_configuration(reverted);
+    system.acknowledge_configuration(first_request.id());
+    assert_eq!(system.configuration_settings().configuration(), first);
+}

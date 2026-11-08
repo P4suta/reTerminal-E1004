@@ -14,6 +14,13 @@ fn status_fixture_matches_the_reviewed_framebuffer_digest() {
 #[test]
 fn static_server_exposes_only_preview_assets() {
     assert_eq!(web_path("/"), Some(PathBuf::from("web/index.html")));
+    assert_eq!(web_path("/?tools"), Some(PathBuf::from("web/index.html")));
+    assert!(web_path("/private.txt?tools").is_none());
+    assert_eq!(
+        web_path("/pkg/NOTICE.txt"),
+        Some(PathBuf::from("web/pkg/NOTICE.txt"))
+    );
+    assert!(web_path("/pkg/private.txt").is_none());
     assert_eq!(
         web_path("/pkg/web_preview_bg.wasm"),
         Some(PathBuf::from("web/pkg/web_preview_bg.wasm"))
@@ -32,7 +39,14 @@ fn static_server_exposes_only_preview_assets() {
 
 #[test]
 fn monochrome_design_gate_rejects_prohibited_styles() {
+    assert!(monochrome(".field-error:empty, #error:empty { display: none; color: #000; }").is_ok());
     assert!(monochrome("body { color: #000; background: #fff; }").is_ok());
+    assert!(monochrome(".red, #pink { color: black; font-family: red; width: calc(100% - 2px); opacity: 1; box-shadow: none; text-shadow: none; filter: none; backdrop-filter: none; mix-blend-mode: normal; background-blend-mode: normal; }").is_ok());
+    assert!(monochrome(
+        "@media (min-width: 320px) { #first:hover, #second:focus { border: 2px solid black; } }"
+    )
+    .is_ok());
+    assert!(monochrome(".parent { &:focus, #child { color: white; } }").is_ok());
     for css in [
         "a {color: red;}",
         "a {color: #777;}",
@@ -41,6 +55,13 @@ fn monochrome_design_gate_rejects_prohibited_styles() {
         "a {box-shadow: 0 0 2px black;}",
         "a {filter: blur(1px);}",
         "a {mix-blend-mode: multiply;}",
+        "a {border: 1px solid red;}",
+        "a {border: 1px solid #777;}",
+        "a {--palette: [#777];}",
+        "a {font-family: \"bad\nfont\";}",
+        "a {border-left-color: rebeccapurple;}",
+        "a {background: RGB(128,128,128);}",
+        "a {border: 1px solid oklch(50% 0 0);}",
     ] {
         assert!(monochrome(css).is_err(), "{css}");
     }
@@ -57,6 +78,14 @@ fn firmware_feature_matrix_has_no_silent_fallback() {
             .unwrap()
             .cargo_features(),
         Some("wifi,ble,coex")
+    );
+    assert_eq!(
+        FirmwareFeatures::parse("wifi").unwrap().cargo_features(),
+        Some("wifi")
+    );
+    assert_eq!(
+        FirmwareFeatures::parse("ble").unwrap().cargo_features(),
+        Some("ble")
     );
     assert!(FirmwareFeatures::parse("wfi").is_err());
 }
