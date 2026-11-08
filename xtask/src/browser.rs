@@ -712,13 +712,13 @@ async fn viewport_failures(
         if(document.documentElement.scrollHeight>innerHeight+1||document.documentElement.scrollWidth>innerWidth+1)failures.push('page overflow');
         for(const selector of {}){{
             const control=document.querySelector(selector);
-            if(!control?.getClientRects().length){{failures.push(selector+': hidden');continue;}}
+            if(!control?.checkVisibility({{checkVisibilityCSS:true,checkOpacity:true}})||!control.getClientRects().length){{failures.push(selector+': hidden');continue;}}
             const r=control.getBoundingClientRect();
             if(r.width<=0||r.height<=0)failures.push(selector+': empty target');
             if(r.top<0||r.bottom>innerHeight+1||r.left<0||r.right>innerWidth+1)failures.push(selector+': outside viewport');
             for(let parent=control.parentElement;parent;parent=parent.parentElement){{
                 const style=getComputedStyle(parent),p=parent.getBoundingClientRect();
-                if(/auto|scroll|hidden|clip/.test(style.overflowY)&&(r.top<p.top-1||r.bottom>p.bottom+1))failures.push(selector+': clipped by '+(parent.id||parent.tagName)+' (target '+r.top+'..'+r.bottom+', parent '+p.top+'..'+p.bottom+')');
+                if(/auto|scroll|hidden|clip/.test(style.overflowY)&&(r.top<p.top-1||r.bottom>p.bottom+1))failures.push(selector+': clipped by '+(parent.id||parent.tagName)+' (target '+r.top+'..'+r.bottom+', parent '+p.top+'..'+p.bottom+', scroll '+parent.scrollTop+'/'+parent.scrollHeight+'/'+parent.clientHeight+')');
             }}
         }}
         return failures;
@@ -946,10 +946,36 @@ async fn viewport_layout_checks(browser: &Browser, preview_url: &str) -> Browser
         click(&page, "#tab-images").await?;
     }
     click(&page, "#tab-device").await?;
+    assert_js(&page, "!document.querySelector('#app-info').open").await?;
+    if viewport_failures(&page, &["#app-info a"]).await?.is_empty() {
+        return Err("viewport gate accepted content in a closed disclosure".into());
+    }
     click(&page, "#app-info > summary").await?;
+    assert_js(&page, "document.querySelector('#app-info').open").await?;
     page.find_element("#app-info a").await?.focus().await?;
     assert_viewport(&page, &["#app-info a"]).await?;
     assert_js(&page, "document.querySelectorAll('#app-info a').length===3").await?;
+    for font in ["Arial", "Verdana", "monospace"] {
+        page.evaluate(format!(
+            "document.documentElement.style.fontFamily={}",
+            serde_json::to_string(font)?
+        ))
+        .await?;
+        for selector in [
+            "#app-info a:nth-child(1)",
+            "#app-info a:nth-child(2)",
+            "#app-info a:nth-child(3)",
+        ] {
+            page.find_element(selector).await?.focus().await?;
+            assert_viewport(&page, &[selector]).await?;
+        }
+    }
+    page.evaluate("document.documentElement.style.fontFamily=''")
+        .await?;
+    click(&page, "#app-info > summary").await?;
+    assert_js(&page, "!document.querySelector('#app-info').open").await?;
+    show_control(&page, "#app-info a").await?;
+    assert_js(&page, "document.querySelector('#app-info').open").await?;
     click(&page, "#tab-images").await?;
     show_control(&page, "#image-brightness").await?;
     page.find_element("#image-brightness")
@@ -1485,7 +1511,7 @@ async fn show_control(page: &Page, selector: &str) -> BrowserResult {
             .click()
             .await?;
     }
-    let summaries: Vec<String> = page.evaluate(format!("(()=>{{const summaries=[];let control=document.querySelector({});while(control){{if(control.tagName==='DETAILS'&&!control.open){{const summary=control.querySelector(':scope > summary');if(!summary.id){{window.summarySequence=(window.summarySequence??0)+1;summary.id='test-summary-'+window.summarySequence;}}summaries.push(summary.id);}}control=control.parentElement;}}return summaries.reverse();}})()", serde_json::to_string(selector)?)).await?.into_value()?;
+    let summaries: Vec<String> = page.evaluate(format!("(()=>{{const summaries=[],target=document.querySelector({}),ownDetails=target?.closest('summary')?.parentElement;let control=target;while(control){{if(control.tagName==='DETAILS'&&control!==ownDetails&&!control.open){{const summary=control.querySelector(':scope > summary');if(!summary.id){{window.summarySequence=(window.summarySequence??0)+1;summary.id='test-summary-'+window.summarySequence;}}summaries.push(summary.id);}}control=control.parentElement;}}return summaries.reverse();}})()", serde_json::to_string(selector)?)).await?.into_value()?;
     for summary in summaries {
         page.find_element(format!("#{summary}"))
             .await?
