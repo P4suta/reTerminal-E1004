@@ -100,7 +100,7 @@ fn measurement_requests_wait_for_one_completed_sample_before_display() {
             .state
             .transition(AppEvent::Telemetry(TelemetrySnapshot::default()));
         assert!(completed.actions.contains(&Action::Display { id: 1 }));
-        assert_eq!(completed.state.screen, ScreenId::Diagnostics);
+        assert_eq!(completed.state.screen, ScreenId::Calendar);
     }
 }
 
@@ -273,7 +273,7 @@ fn busy_inputs_coalesce_to_one_request_for_the_latest_screen() {
             .iter()
             .any(|a| matches!(a, Action::Display { .. })));
     }
-    assert_eq!(app.screen, ScreenId::Diagnostics);
+    assert_eq!(app.screen, ScreenId::Gallery);
     assert!(app.pending);
     assert!(step(
         &mut app,
@@ -449,9 +449,13 @@ fn every_screen_direction_and_configuration_orientation_is_observable() {
         assert_eq!(app.next_refresh_ms, 1_800_000);
     }
     for (start, previous, next) in [
-        (ScreenId::Status, ScreenId::Drawing, ScreenId::Diagnostics),
-        (ScreenId::Diagnostics, ScreenId::Status, ScreenId::Drawing),
-        (ScreenId::Drawing, ScreenId::Diagnostics, ScreenId::Status),
+        (ScreenId::Status, ScreenId::Gallery, ScreenId::Calendar),
+        (ScreenId::Calendar, ScreenId::Status, ScreenId::Checklist),
+        (ScreenId::Checklist, ScreenId::Calendar, ScreenId::Notes),
+        (ScreenId::Notes, ScreenId::Checklist, ScreenId::Diagnostics),
+        (ScreenId::Diagnostics, ScreenId::Notes, ScreenId::Drawing),
+        (ScreenId::Drawing, ScreenId::Diagnostics, ScreenId::Gallery),
+        (ScreenId::Gallery, ScreenId::Drawing, ScreenId::Status),
     ] {
         for (button, expected) in [
             (Button::Previous, previous),
@@ -466,7 +470,7 @@ fn every_screen_direction_and_configuration_orientation_is_observable() {
             assert_eq!(app.screen, expected);
             assert_eq!(
                 actions.contains(&Action::Measure),
-                button == Button::Refresh
+                button == Button::Refresh && start != ScreenId::Calendar
             );
         }
     }

@@ -38,6 +38,19 @@ fuzz_target!(|data: &[u8]| {
     }
     let _ = decode(data);
     let _ = recover(data, &data[..data.len() / 2]);
+    if let Some(record) = device_core::media::ImageRecord::decode(data) {
+        assert_eq!(
+            device_core::media::ImageRecord::decode(&record.encode()),
+            Some(record)
+        );
+    }
+    for byte in data.iter().take(256) {
+        assert_eq!(
+            device_core::media::valid_palette_byte(*byte),
+            matches!(byte >> 4, 0 | 1 | 2 | 3 | 5 | 6)
+                && matches!(byte & 15, 0 | 1 | 2 | 3 | 5 | 6)
+        );
+    }
     if let Ok(text) = core::str::from_utf8(data) {
         if xtask::bindings::validate(text).is_ok() {
             use quote::ToTokens;
@@ -123,6 +136,7 @@ fuzz_target!(|data: &[u8]| {
                         ResumePolicy::Last => "resume last".into(),
                         ResumePolicy::Status => "resume status".into(),
                     },
+                    Command::Device(_) | Command::Media(_) => text.trim().to_owned(),
                     Command::WifiScan => "wifi scan".into(),
                     Command::WifiConnect { ssid, password } => {
                         format!("wifi connect {ssid}\t{password}")
@@ -173,11 +187,8 @@ fuzz_target!(|data: &[u8]| {
             } else {
                 ResumePolicy::Status
             },
-            screen: match raw[5] % 3 {
-                0 => ScreenId::Status,
-                1 => ScreenId::Diagnostics,
-                _ => ScreenId::Drawing,
-            },
+            screen: ScreenId::ALL[usize::from(raw[5]) % ScreenId::ALL.len()],
+            ..Settings::default()
         };
         let generation = u32::from_le_bytes(raw[5..9].try_into().unwrap());
         assert_eq!(

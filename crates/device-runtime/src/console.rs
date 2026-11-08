@@ -17,7 +17,7 @@ const COMMAND_WAIT_MS: u64 = 100;
 const SERIAL_WAIT_MS: u64 = 1000;
 const BUZZER_MS: u64 = 50;
 const OUTPUT_BYTES: usize = 1024;
-const READ_BATCH: usize = 32;
+const READ_BATCH: usize = 256;
 
 pub trait ConsoleIo {
     fn read(&mut self) -> nb::Result<u8, IoFailure>;
@@ -60,7 +60,43 @@ async fn bus_command(system: &System, request: BusRequest) -> bool {
     )
 }
 
+async fn configure(system: &System, settings: Settings) -> bool {
+    let Some(request) = system.reserve_configuration(settings.configuration()) else {
+        return false;
+    };
+    if !bus_command(
+        system,
+        BusRequest::Configure {
+            id: request.id(),
+            settings,
+        },
+    )
+    .await
+    {
+        return false;
+    }
+    system.request_configuration(request);
+    true
+}
+
 pub async fn command(system: &System, io: &mut impl ConsoleIo, line: &str) -> bool {
+    if line.len() <= 256 {
+        if let Some(envelope) = line.strip_prefix("control ") {
+            let Some((id, body)) = envelope.split_once(' ') else {
+                return false;
+            };
+            let Ok(id) = id.parse::<u32>() else {
+                return false;
+            };
+            let result = dispatch(system, io, parse(body)).await;
+            return emit(
+                io,
+                format_args!("reply {id} {}\r\n", if result { "ok" } else { "error" }),
+            )
+            .await
+                && result;
+        }
+    }
     dispatch(system, io, parse(line)).await
 }
 
@@ -80,8 +116,17 @@ async fn dispatch(
                         "interval SECONDS ({} to {} seconds)\r\n",
                         "rtc YYYY-MM-DDTHH:MM:SS (2000 to 2099)\r\n",
                         "resume last | resume status\r\n",
+                        "screen status|calendar|checklist|notes|diagnostics|drawing|gallery\r\n",
+                        "task set N TEXT | task done N | task open N | task clear N\r\n",
+                        "task toggle N (N: 1 to 6; text: 1 to 48 printable ASCII characters)\r\n",
+                        "note set TEXT | note clear (up to 160 printable ASCII characters)\r\n",
+                        "rotation 0|1|2|3 | hold previous|refresh|next\r\n",
                         "wifi scan | wifi disconnect | wifi connect SSID<TAB>PASSWORD\r\n",
-                        "ble on | ble off\r\n",
+                        "ble on | ble off | awake 0..3600\r\n",
+                        "gallery select 1..8 | gallery next | gallery previous\r\n",
+                        "gallery slideshow off|60..86400 | gallery fit 0..3 | gallery anchor 0..8\r\n",
+                        "image begin ID SLOT ROTATION CRC32 | image data ID OFFSET HEX\r\n",
+                        "image commit ID | image abort ID | image delete SLOT | image import SLOT\r\n",
                         "Wi-Fi and BLE commands require their firmware features.\r\n"
                     ),
                     MIN_REFRESH_SECONDS, MAX_REFRESH_SECONDS
@@ -92,10 +137,76 @@ async fn dispatch(
         Ok(Command::Refresh) => {
             system
                 .events
-                .send(AppEvent::Button(device_core::app::Button::Refresh))
+                .send(AppEvent::Hold(device_core::app::Button::Refresh))
                 .await
         }
+        Ok(Command::Device(command)) => match command.into_event() {
+            Ok(event) => system.events.send(event).await,
+            Err(rotation) => {
+                let settings = system.configuration_settings();
+                return configure(
+                    system,
+                    Settings {
+                        rotation: rotation as u8,
+                        ..settings
+                    },
+                )
+                .await;
+            }
+        },
         Ok(Command::Sleep) => system.events.send(AppEvent::RequestSleep).await,
+        Ok(Command::Media(command)) => {
+            use device_core::media::GalleryEvent;
+            let Some(request) = system.reserve_media(command) else {
+                return false;
+            };
+            if matches!(
+                command,
+                e1004_bsp::media::MediaCommand::Begin { .. }
+                    | e1004_bsp::media::MediaCommand::Delete(_)
+                    | e1004_bsp::media::MediaCommand::Import(_)
+            ) {
+                system.events.send(AppEvent::KeepAwake(600)).await;
+                system
+                    .events
+                    .send(AppEvent::Gallery(GalleryEvent::Busy(true)))
+                    .await;
+            }
+            system.media_reply.reset();
+            if !bus_command(system, BusRequest::Media(request)).await {
+                system
+                    .events
+                    .send(AppEvent::Gallery(GalleryEvent::Busy(false)))
+                    .await;
+                return false;
+            }
+            let response = async {
+                loop {
+                    let reply = system.media_reply.wait().await;
+                    if reply.id == request.id {
+                        return reply.result;
+                    }
+                }
+            };
+            return match select(Timer::after_secs(180), response).await {
+                Either::Second(Ok(received)) => {
+                    emit(
+                        io,
+                        format_args!("event=image_progress received={received}\r\n"),
+                    )
+                    .await
+                }
+                Either::Second(Err(error)) => {
+                    emit(
+                        io,
+                        format_args!("event=image_rejected reason={error:?}\r\n"),
+                    )
+                    .await;
+                    false
+                }
+                Either::First(()) => false,
+            };
+        }
         Ok(Command::Diagnose) => {
             let extension = system.extension.lock(core::cell::Cell::get).at(
                 Instant::now().as_millis(),
@@ -117,32 +228,28 @@ async fn dispatch(
             io.diagnose(false);
         }
         Ok(Command::SetInterval(refresh_seconds)) => {
-            let settings = system
-                .snapshot()
-                .map_or_else(Settings::default, |app| app.settings());
-            return bus_command(
+            let settings = system.configuration_settings();
+            return configure(
                 system,
-                BusRequest::Save(Settings {
+                Settings {
                     refresh_seconds,
                     ..settings
-                }),
+                },
             )
             .await;
         }
         Ok(Command::Resume(resume)) => {
-            let settings = system
-                .snapshot()
-                .map_or_else(Settings::default, |app| Settings {
-                    screen: app.screen,
-                    ..app.settings()
-                });
-            return bus_command(
+            let settings = Settings {
+                screen: system.snapshot().unwrap_or_default().screen,
+                ..system.configuration_settings()
+            };
+            return configure(
                 system,
-                BusRequest::Save(Settings {
+                Settings {
                     resume,
                     screen: Settings { resume, ..settings }.wake_screen(),
                     ..settings
-                }),
+                },
             )
             .await;
         }
@@ -156,7 +263,86 @@ async fn dispatch(
         },
         Ok(Command::Status) => {
             if let Some(app) = system.snapshot() {
+                if !emit(
+                    io,
+                    format_args!(
+                        "event=gallery selected={} count={} slideshow_s={} busy={}\r\n",
+                        app.gallery.settings().selected.number(),
+                        app.gallery.catalog().len(),
+                        app.gallery.settings().slideshow.map_or(0, |v| v.seconds()),
+                        app.gallery.busy()
+                    ),
+                )
+                .await
+                {
+                    return false;
+                }
+                for (index, image) in app.gallery.catalog().entries().iter().enumerate() {
+                    if let Some(image) = image {
+                        if !emit(
+                            io,
+                            format_args!(
+                                "event=image number={} generation={} rotation={} checksum={}\r\n",
+                                index + 1,
+                                image.generation,
+                                image.rotation as u8,
+                                image.checksum
+                            ),
+                        )
+                        .await
+                        {
+                            return false;
+                        }
+                    }
+                }
+                if let Some(shown) = system.presented() {
+                    if !emit(
+                        io,
+                        format_args!(
+                            "event=shown screen={:?} image={} generation={}\r\n",
+                            shown.screen,
+                            shown.gallery.view().image.map_or(0, |(id, _)| id.number()),
+                            shown
+                                .gallery
+                                .view()
+                                .image
+                                .map_or(0, |(_, value)| value.generation)
+                        ),
+                    )
+                    .await
+                    {
+                        return false;
+                    }
+                }
                 if !emit(io,format_args!("event=status screen={:?} resume={:?} saved_screen={:?} interval_s={} refresh={:?} diagnostics={:?} lost_logs={}\r\n",app.screen,app.resume,app.persisted_settings.screen,app.refresh_seconds,app.refresh,app.diagnostics,system.lost_logs.load(Ordering::Relaxed))).await { return false; }
+                if !emit(
+                    io,
+                    format_args!(
+                        "event=daily selected_task={} note={:?} saved={}\r\n",
+                        app.selected_task.number(),
+                        app.daily.note().as_str(),
+                        app.daily == app.persisted_settings.daily
+                    ),
+                )
+                .await
+                {
+                    return false;
+                }
+                for (index, task) in app.daily.tasks().iter().enumerate() {
+                    if !emit(
+                        io,
+                        format_args!(
+                            "event=task number={} done={} text={:?}\r\n",
+                            index + 1,
+                            task.done,
+                            task.text.as_str()
+                        ),
+                    )
+                    .await
+                    {
+                        return false;
+                    }
+                }
                 return emit(
                     io,
                     format_args!("event=telemetry value={:?}\r\n", app.telemetry),
@@ -325,10 +511,8 @@ pub async fn console_loop(system: &System, mut io: impl ConsoleIo, version: &str
                     LineResult::Complete => {
                         match lines.line() {
                             Ok(line) => {
-                                let parsed = parse(line);
-                                let invalid = parsed.is_err();
-                                if !dispatch(system, &mut io, parsed).await
-                                    && !invalid
+                                if !command(system, &mut io, line).await
+                                    && parse(line).is_ok()
                                     && !emit(&mut io, format_args!("event=command_rejected message=\"Command not completed. Run status, then retry.\"\r\n")).await
                                 {
                                     system.lost_logs.fetch_add(1, Ordering::Relaxed);

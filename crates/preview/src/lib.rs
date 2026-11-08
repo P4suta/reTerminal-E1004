@@ -1,3 +1,7 @@
+use device_core::media::{
+    Catalog, GalleryEvent, ImageId, ImageIndex, ImageRecord, PackedFrame, HEADER_BYTES,
+    IMAGE_SLOTS, MAX_IMAGES,
+};
 use device_core::{
     app::*,
     geometry::{Rotation, FRAME_BYTES, LOW_NIBBLE_MASK, NIBBLE_BITS, PACKED_WHITE},
@@ -5,6 +9,7 @@ use device_core::{
     telemetry::*,
 };
 use device_ui::{render, Framebuffer};
+use std::sync::Arc;
 mod measurements;
 pub use measurements::{InputError, MeasurementInputs};
 #[cfg(kani)]
@@ -55,6 +60,9 @@ pub struct Preview {
     immediate: bool,
     events: Vec<String>,
     presentation: Presentation<App>,
+    images: [Option<Arc<Vec<u8>>>; MAX_IMAGES],
+    shown_frame: Option<Arc<Vec<u8>>>,
+    active_frame: Option<(u32, Option<Arc<Vec<u8>>>)>,
 }
 impl Default for Preview {
     fn default() -> Self {
@@ -63,10 +71,75 @@ impl Default for Preview {
             immediate: true,
             events: Vec::new(),
             presentation: Presentation::new(App::default()),
+            images: core::array::from_fn(|_| None),
+            shown_frame: None,
+            active_frame: None,
         }
     }
 }
 impl Preview {
+    fn catalog(&self) -> Catalog {
+        let mut records = [None; IMAGE_SLOTS];
+        for (record, image) in records.iter_mut().zip(&self.images) {
+            *record = image
+                .as_ref()
+                .and_then(|bytes| ImageRecord::decode(&bytes[..HEADER_BYTES]));
+        }
+        ImageIndex::new(records).catalog()
+    }
+    pub fn import_image(&mut self, number: u8, file: &[u8]) -> Result<(), &'static str> {
+        let id = ImageId::new(number).ok_or("Choose an image from 1 to 8.")?;
+        let image = PackedFrame::from_file(file).ok_or("Invalid image file or checksum.")?;
+        let generation = self
+            .catalog()
+            .get(id)
+            .map_or(Some(0), |value| value.generation.checked_add(1))
+            .ok_or("Image generation exhausted.")?;
+        let mut bytes = ImageRecord::image(
+            id,
+            generation,
+            image.rotation(),
+            device_core::settings::crc32(image.bytes()),
+        )
+        .encode()
+        .to_vec();
+        bytes.extend_from_slice(image.bytes());
+        self.event(AppEvent::Gallery(GalleryEvent::Busy(true)));
+        self.images[id.index()] = Some(Arc::new(bytes));
+        self.event(AppEvent::Gallery(GalleryEvent::Committed(
+            self.catalog(),
+            id,
+        )));
+        Ok(())
+    }
+    pub fn export_image(&self, number: u8) -> Option<Vec<u8>> {
+        self.images[ImageId::new(number)?.index()]
+            .as_ref()
+            .map(|bytes| bytes.as_ref().clone())
+    }
+    pub fn delete_image(&mut self, number: u8) -> Result<(), &'static str> {
+        let id = ImageId::new(number).ok_or("Choose an image from 1 to 8.")?;
+        self.event(AppEvent::Gallery(GalleryEvent::Busy(true)));
+        self.images[id.index()] = None;
+        self.event(AppEvent::Gallery(GalleryEvent::Ready(self.catalog())));
+        Ok(())
+    }
+    fn desired_frame(&self) -> Vec<u8> {
+        let mut bytes = vec![PACKED_WHITE; FRAME_BYTES];
+        let image = self
+            .app
+            .gallery
+            .view()
+            .image
+            .and_then(|(id, _)| self.images[id.index()].as_ref())
+            .and_then(|bytes| PackedFrame::from_file(bytes));
+        device_ui::render_with_media(
+            &self.app,
+            &mut Framebuffer::new(&mut bytes, self.app.rotation).expect("fixed frame size"),
+            image,
+        );
+        bytes
+    }
     fn can_record(&self, length: usize) -> bool {
         let bytes = self.events.iter().map(String::len).sum::<usize>()
             + self.events.len().saturating_sub(1);
@@ -122,6 +195,17 @@ impl Preview {
             if matches!(self.app.refresh, RefreshState::Updating { id: active, .. } if active == id)
             {
                 self.presentation.finish(id, result);
+                if self
+                    .active_frame
+                    .as_ref()
+                    .is_some_and(|(active, _)| *active == id)
+                {
+                    if let Some((_, frame)) = self.active_frame.take() {
+                        if result.is_ok() {
+                            self.shown_frame = frame;
+                        }
+                    }
+                }
             }
         }
         let transition = self.app.transition(event);
@@ -129,8 +213,19 @@ impl Preview {
         let mut next_event = None;
         for action in transition.actions {
             match action {
-                Action::Display { id } => self.presentation.start(id, self.app),
-                Action::StopPanel => self.presentation.cancel(),
+                Action::Display { id } => {
+                    self.presentation.start(id, self.app);
+                    self.active_frame = Some((
+                        id,
+                        (self.app.screen == ScreenId::Gallery
+                            && self.app.gallery.view().image.is_some())
+                        .then(|| Arc::new(self.desired_frame())),
+                    ));
+                }
+                Action::StopPanel => {
+                    self.presentation.cancel();
+                    self.active_frame = None;
+                }
                 Action::Measure => next_event = Some(AppEvent::Telemetry(self.app.telemetry)),
                 Action::None | Action::Sleep { .. } | Action::Log(_) => {}
             }
@@ -150,6 +245,17 @@ impl Preview {
         let mut telemetry = self.app.telemetry;
         let (name, value) = command.split_once(' ').unwrap_or((command, ""));
         let measured_at_ms = self.app.now_ms;
+        if let Some(command_result) = device_core::commands::parse(command) {
+            match command_result?.into_event() {
+                Ok(event) => self.event(event),
+                Err(rotation) => self.event(AppEvent::Configure(device_core::settings::Settings {
+                    rotation: rotation as u8,
+                    ..self.app.settings()
+                })),
+            }
+            self.events.push(command.to_owned());
+            return Ok(());
+        }
         match (name, value) {
             ("measurements", value) => {
                 let [clock, temperature, humidity, battery, charging, sd, wifi, ble]: [&str;
@@ -197,19 +303,6 @@ impl Preview {
             ("tick", value) => self.event(AppEvent::Tick(
                 value.parse().map_err(|_| "invalid milliseconds")?,
             )),
-            ("rotation", value) => {
-                let rotation = match value {
-                    "0" => Rotation::Portrait,
-                    "1" => Rotation::Landscape,
-                    "2" => Rotation::InvertedPortrait,
-                    "3" => Rotation::InvertedLandscape,
-                    _ => return Err("invalid rotation"),
-                };
-                self.event(AppEvent::Configure(device_core::settings::Settings {
-                    rotation: rotation as u8,
-                    ..self.app.settings()
-                }));
-            }
             ("sd", value) => self.event(AppEvent::StorageChanged(match value {
                 "absent" => StorageStatus::Absent,
                 "ready" => StorageStatus::Ready,
@@ -271,6 +364,9 @@ impl Preview {
         Ok(())
     }
     pub fn frame(&self) -> Vec<u8> {
+        if let Some(frame) = &self.shown_frame {
+            return frame.as_ref().clone();
+        }
         let mut bytes = vec![PACKED_WHITE; FRAME_BYTES];
         let (app, rotation) = self.shown();
         render(
@@ -300,7 +396,7 @@ impl Preview {
     }
     pub fn text(&self) -> String {
         let t = self.app.telemetry;
-        format!("{}\nShown screen: {}\nClock: {}\nTemperature: {}\nHumidity: {}\nBattery: {}\nCharging: {}\nSD card: {}\nWi-Fi: {}\nBluetooth Low Energy: {}\n{}\nLast error: {}",
+        let mut text = format!("{}\nShown screen: {}\nClock: {}\nTemperature: {}\nHumidity: {}\nBattery: {}\nCharging: {}\nSD card: {}\nWi-Fi: {}\nBluetooth Low Energy: {}\n{}\nLast error: {}",
             screen_name(self.app.screen), screen_name(self.shown().0.screen),
             sample_text(t.clock, |d| format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", d.year, d.month, d.day, d.hour, d.minute, d.second)),
             sample_text(t.temperature, |t| format!("{} C", decimal(i32::from(t.get())))),
@@ -309,7 +405,25 @@ impl Preview {
             match t.charging { Charging::Unknown => "unknown", Charging::Charging => "charging", Charging::NotCharging => "not charging" },
             match self.app.diagnostics.storage { StorageStatus::Absent => "absent", StorageStatus::Ready => "ready", StorageStatus::Fault => "fault" },
             radio_name(self.app.diagnostics.wifi), radio_name(self.app.diagnostics.ble), self.display_status(),
-            self.app.diagnostics.last_error.map(fault_name).unwrap_or("none"))
+            self.app.diagnostics.last_error.map(fault_name).unwrap_or("none"));
+        if let Some(month) = self.app.calendar() {
+            text.push_str(&format!("\nCalendar: {} {}", month.name(), month.year()));
+        }
+        let (done, total) = self.app.daily.counts();
+        text.push_str(&format!(
+            "\nChecklist: {done} of {total} complete\nSelected task: {}",
+            self.app.selected_task.number()
+        ));
+        for (index, task) in self.app.daily.tasks().iter().enumerate() {
+            text.push_str(&format!(
+                "\n{} [{}] {}",
+                index + 1,
+                if task.done { "x" } else { " " },
+                task.text.as_str()
+            ));
+        }
+        text.push_str(&format!("\nNote: {}", self.app.daily.note().as_str()));
+        text
     }
 
     pub fn display_status(&self) -> &'static str {
@@ -329,7 +443,7 @@ impl Preview {
                 }
             }
             RefreshState::Failed(_) => {
-                "Display update failed. The previous image remains visible. Press Refresh to retry."
+                "Display update failed. The previous image remains visible. Choose Hold middle to retry."
             }
         }
     }
@@ -377,11 +491,7 @@ fn sample_text<T: Copy>(sample: Sample<T>, value: impl FnOnce(T) -> String) -> S
     }
 }
 fn screen_name(screen: ScreenId) -> &'static str {
-    match screen {
-        ScreenId::Status => "Device Status",
-        ScreenId::Diagnostics => "Diagnostics",
-        ScreenId::Drawing => "Drawing",
-    }
+    screen.name()
 }
 fn radio_name(status: RadioStatus) -> &'static str {
     match status {

@@ -137,6 +137,10 @@ pub struct Device {
     pub sleeping: Option<u32>,
     pub reject_sleep: bool,
     pub slots: [[u8; SLOT_BYTES]; 2],
+    pub media: Option<Vec<u8>>,
+    pub retained_gallery: Option<[u8; SLOT_BYTES]>,
+    pub media_fault: bool,
+    pub sd_image: Option<Vec<u8>>,
     pub card: StorageStatus,
     pub rtc: [u8; 7],
     pub sensor_failure: Option<IoFailure>,
@@ -180,6 +184,10 @@ impl Board {
             sleeping: None,
             reject_sleep: false,
             slots: [[0xff; SLOT_BYTES]; 2],
+            media: None,
+            retained_gallery: None,
+            media_fault: false,
+            sd_image: None,
             card: StorageStatus::Absent,
             rtc: [0, 0x30, 0x19, 6, 5, 0x11, 0x26],
             sensor_failure: None,
@@ -211,6 +219,52 @@ impl Board {
     }
 }
 impl SlotStorage for Board {
+    fn read_retained_gallery(&mut self) -> Option<[u8; SLOT_BYTES]> {
+        self.0.borrow().retained_gallery
+    }
+    fn retain_gallery(&mut self, bytes: &[u8; SLOT_BYTES]) {
+        self.0.borrow_mut().retained_gallery = Some(*bytes);
+    }
+    fn media_read(
+        &mut self,
+        slot: device_core::media::PhysicalSlot,
+        offset: usize,
+        bytes: &mut [u8],
+    ) -> Result<(), StorageError> {
+        let board = self.0.borrow();
+        if board.media_fault {
+            return Err(StorageError::Io);
+        }
+        if let Some(media) = &board.media {
+            let start = slot.index() * 0x100000 + offset;
+            bytes.copy_from_slice(&media[start..start + bytes.len()]);
+        } else {
+            bytes.fill(255);
+        }
+        Ok(())
+    }
+    fn media_erase(&mut self, slot: device_core::media::PhysicalSlot) -> Result<(), StorageError> {
+        let mut board = self.0.borrow_mut();
+        let media = board.media.get_or_insert_with(|| vec![255; 0x900000]);
+        media[slot.index() * 0x100000..(slot.index() + 1) * 0x100000].fill(255);
+        Ok(())
+    }
+    fn media_program(
+        &mut self,
+        slot: device_core::media::PhysicalSlot,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), StorageError> {
+        let mut board = self.0.borrow_mut();
+        let media = board.media.as_mut().ok_or(StorageError::Io)?;
+        assert!(offset.is_multiple_of(4) && bytes.len().is_multiple_of(4));
+        let start = slot.index() * 0x100000 + offset;
+        for (target, source) in media[start..start + bytes.len()].iter_mut().zip(bytes) {
+            assert_eq!(*target & *source, *source);
+            *target &= source;
+        }
+        Ok(())
+    }
     fn read(&mut self, slot: usize, bytes: &mut [u8; SLOT_BYTES]) -> Result<(), StorageError> {
         let mut device = self.0.borrow_mut();
         device.storage_calls += 1;
@@ -491,6 +545,24 @@ impl BusIo for Board {
     }
     fn sd_diagnose(&mut self) -> StorageStatus {
         self.0.borrow().card
+    }
+    async fn sd_import(
+        &mut self,
+        _: device_core::media::ImageId,
+        bytes: &mut [u8],
+    ) -> Result<device_core::media::ImageDescriptor, StorageError> {
+        let board = self.0.borrow();
+        let file = board.sd_image.as_ref().ok_or(StorageError::Absent)?;
+        let image = device_core::media::PackedFrame::from_file(file).ok_or(StorageError::Io)?;
+        if bytes.len() != image.bytes().len() {
+            return Err(StorageError::Io);
+        }
+        bytes.copy_from_slice(image.bytes());
+        Ok(
+            device_core::media::ImageRecord::decode(&file[..device_core::media::HEADER_BYTES])
+                .ok_or(StorageError::Io)?
+                .descriptor(),
+        )
     }
     fn deep_sleep(&mut self, seconds: u32) -> SleepOutcome {
         let mut device = self.0.borrow_mut();

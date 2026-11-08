@@ -160,7 +160,12 @@ async fn bus_task(hardware: panel::Hardware, flash: storage::FlashSlots) {
     } else {
         record(LogRecord::Event("framebuffer_allocation_failed"));
     }
-    device_runtime::tasks::bus_loop(&SYSTEM, hardware, flash, &mut frame).await;
+    let mut image = Vec::<u8, esp_alloc::ExternalMemory>::new_in(esp_alloc::ExternalMemory);
+    if image.try_reserve_exact(FRAME_BYTES).is_ok() {
+        image.resize(FRAME_BYTES, PACKED_WHITE);
+    }
+    device_runtime::tasks::bus_loop_with_media(&SYSTEM, hardware, flash, &mut frame, &mut image)
+        .await;
 }
 
 #[panic_handler]

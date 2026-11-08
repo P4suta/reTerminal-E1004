@@ -274,3 +274,35 @@ model = "ESP32-S3 target-binary diagnostic experiment"
 revision = "esp-develop-9.2.2-20260417; Apple silicon archive sha256 bb8c15810565d3df1665dc34962430885e11bc95575b228fb44698146be1e9d6"
 license = "QEMU GPL-2.0; binary used locally, not redistributed"
 unverified = "Complete board execution and physical behavior; concrete model limitations are recorded in docs/verification/target-emulation.md"
+
+[[source]]
+url = "https://github.com/Seeed-Projects/OSHW-reTerminal-Series-E-D/blob/main/examples/base/GxEPD2_reTerminal_E1004/GxEPD2_T133A01_1200x1600.h"
+retrieved = "2026-11-08"
+model = "E1004 full refresh capabilities"
+revision = "Mutable main branch viewed on retrieval date; capability declarations only"
+license = "No license notice in viewed header; external reference only; no upstream source copied"
+unverified = "Physical refresh timing and color quality; the header's seven-color comment does not override the E1004 manual's six-color palette"
+
+[[source]]
+url = "https://developer.chrome.com/docs/capabilities/serial"
+retrieved = "2026-11-08"
+model = "Browser serial device connection"
+revision = "Page reports last updated 2020-08-12; viewed 2026-11-08"
+license = "CC-BY-4.0 documentation; Apache-2.0 code samples; external reference only"
+unverified = "Physical serial connection and browser availability outside modeled desktop tests"
+
+[[source]]
+url = "https://www.nayuki.io/page/qr-code-generator-library"
+retrieved = "2026-11-08"
+model = "Locally generated QR image content"
+revision = "qrcodegen 1.8.0; live author documentation viewed on retrieval date"
+license = "MIT; library dependency license and notices preserved by Cargo distribution"
+unverified = "Scanning quality on the physical electronic paper panel"
+
+[[source]]
+url = "https://docs.espressif.com/projects/rust/esp-hal/1.2.0/esp32s3/esp_hal/attr.ram.html"
+retrieved = "2026-11-08"
+model = "ESP32-S3 retained gallery selection"
+revision = "esp-hal 1.2.0 and esp-hal-procmacros 0.23.0; local SDK source checks Persistable atomic word arrays"
+license = "MIT OR Apache-2.0; SDK attribute used without copying implementation"
+unverified = "Physical retention and current consumption across device sleep; default and explicit power configuration preserve fast memory"

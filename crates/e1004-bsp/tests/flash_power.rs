@@ -86,8 +86,8 @@ fn flash_ranges_and_reserved_partition_match_the_production_adapter() {
     assert_eq!(settings_address(1, 23, 1), Ok(0xa017));
     for (slot, offset, length) in [
         (2, 0, 1),
-        (0, 24, 0),
-        (1, 23, 2),
+        (0, SLOT_BYTES, 0),
+        (1, SLOT_BYTES - 1, 2),
         (0, usize::MAX, 1),
         (0, 1, usize::MAX),
     ] {

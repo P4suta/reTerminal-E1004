@@ -198,5 +198,5 @@ fn every_direct_control_has_observable_success_and_display_feedback() {
     preview.command("next").unwrap();
     assert!(preview.display_status().contains("queued"));
     preview.command("timeout").unwrap();
-    assert!(preview.display_status().contains("Refresh to retry"));
+    assert!(preview.display_status().contains("Hold middle to retry"));
 }

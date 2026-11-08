@@ -8,6 +8,15 @@ fuzz_runs = 10000
 fuzz_seed = 104
 
 core_harnesses = [
+  "retained_selection_requires_matching_preferences_and_a_sleep_wake",
+  "packed_palette_and_transfer_admission_match_wire_contract",
+  "image_placement_returns_only_bounded_source_coordinates",
+  "configuration_acknowledgement_preserves_a_different_request",
+  "saved_content_never_replaces_a_reverted_edit",
+  "calendar_cells_and_navigation_are_bounded",
+  "task_selection_stays_in_range_and_is_reversible",
+  "printable_text_is_bounded_and_rejects_control_bytes",
+  "daily_edits_round_trip_and_preserve_unselected_tasks",
   "acknowledged_screen_policy_preserves_navigation_and_deadline",
   "previous_settings_format_preserves_values_and_rejects_reserved_payload",
   "measurement_barrier_cannot_emit_display_or_sleep",
@@ -20,7 +29,8 @@ core_harnesses = [
   "nibble_write_preserves_the_other_pixel",
   "controller_mapping_is_disjoint_and_bounded",
   "battery_estimate_is_monotone_and_bounded",
-  "settings_round_trip_and_single_bit_corruption",
+  "settings_round_trip_preserves_values",
+  "settings_envelope_rejects_single_bit_corruption",
   "updating_never_sleeps_or_starts_a_second_display",
   "timeout_never_becomes_success_or_sleep",
   "rotation_is_injective",
@@ -28,6 +38,8 @@ core_harnesses = [
 ]
 
 bsp_harnesses = [
+  "image_flash_addresses_stay_in_the_reserved_partition",
+  "held_button_emits_once_and_never_becomes_a_tap",
   "wifi_credential_lengths_match_the_byte_limits",
   "resume_policy_decoding_accepts_only_exact_ascii_values",
   "flash_addresses_are_bounded_and_sectors_are_disjoint",
@@ -40,6 +52,11 @@ bsp_harnesses = [
 ui_harnesses = ["text_buffer_keeps_utf8_and_reports_overflow"]
 
 mutation_files = [
+  "crates/device-core/src/image.rs",
+  "crates/device-core/src/media.rs",
+  "crates/device-core/src/calendar.rs",
+  "crates/device-core/src/daily.rs",
+  "crates/device-core/src/commands.rs",
   "crates/device-core/src/presentation.rs",
   "crates/device-core/src/geometry.rs",
   "crates/device-core/src/settings.rs",
@@ -53,7 +70,12 @@ preview_mutation_files = [
 ]
 
 panel_mutation_files = ["crates/t133a01/src/lib.rs"]
-bsp_mutation_files = ["crates/e1004-bsp/src/console.rs"]
+bsp_mutation_files = [
+  "crates/e1004-bsp/src/storage.rs",
+  "crates/e1004-bsp/src/media.rs",
+  "crates/e1004-bsp/src/console.rs",
+  "crates/e1004-bsp/src/input.rs",
+]
 
 runtime_mutation_files = [
   "crates/device-runtime/src/policy.rs",

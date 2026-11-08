@@ -87,3 +87,48 @@ fn console_and_line_input() {
         assert!(parse(line).is_err());
     }
 }
+
+#[test]
+fn daily_commands_cross_the_console_boundary_as_validated_values() {
+    use device_core::{
+        app::ScreenId,
+        commands::DeviceCommand,
+        daily::{DailyEdit, TaskId, Text},
+        geometry::Rotation,
+    };
+    for (line, command) in [
+        (
+            "screen checklist",
+            DeviceCommand::Screen(ScreenId::Checklist),
+        ),
+        (
+            "hold next",
+            DeviceCommand::Hold(device_core::app::Button::Next),
+        ),
+        (
+            "task set 6 Buy groceries",
+            DeviceCommand::Edit(DailyEdit::SetTask {
+                id: TaskId::new(6).unwrap(),
+                text: Text::new("Buy groceries").unwrap(),
+            }),
+        ),
+        (
+            "note set Library books.",
+            DeviceCommand::Edit(DailyEdit::Note(Text::new("Library books.").unwrap())),
+        ),
+        (
+            "rotation 3",
+            DeviceCommand::Rotation(Rotation::InvertedLandscape),
+        ),
+    ] {
+        assert_eq!(parse(line), Ok(Command::Device(command)));
+    }
+    for line in [
+        "task set 7 invalid",
+        "note set 日本語",
+        "rotation 4",
+        "screen unknown",
+    ] {
+        assert_eq!(parse(line), Err(ParseError::Invalid));
+    }
+}

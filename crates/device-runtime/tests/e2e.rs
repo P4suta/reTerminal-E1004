@@ -1,4 +1,184 @@
 mod support;
+#[test]
+fn automatic_gallery_restarts_advance_without_rewriting_flash_preferences() {
+    use device_core::{
+        media::*,
+        settings::{crc32, Settings},
+    };
+    let _clock = clock();
+    let mut board = Board::new();
+    let settings = Settings {
+        screen: ScreenId::Gallery,
+        gallery: GallerySettings {
+            slideshow: SlideInterval::new(60),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    e1004_bsp::storage::save(&mut board, settings).unwrap();
+    let mut storage = vec![255; 0x900000];
+    for (slot, number, color) in [(0usize, 1, 0x22), (1, 3, 0x55)] {
+        let pixels = vec![color; FRAME_BYTES];
+        let record = ImageRecord::image(
+            ImageId::new(number).unwrap(),
+            slot as u64,
+            device_core::geometry::Rotation::Portrait,
+            crc32(&pixels),
+        );
+        let offset = slot * 0x100000;
+        storage[offset..offset + HEADER_BYTES].copy_from_slice(&record.encode());
+        storage[offset + HEADER_BYTES..offset + HEADER_BYTES + FRAME_BYTES]
+            .copy_from_slice(&pixels);
+    }
+    board.0.borrow_mut().media = Some(storage);
+    let writes = board
+        .0
+        .borrow()
+        .trace
+        .iter()
+        .filter(|line| line.starts_with("flash "))
+        .count();
+    for cycle in 0..4 {
+        embassy_time::MockDriver::get().reset();
+        board.0.borrow_mut().sleeping = None;
+        let (settings, error) = loaded(&mut board);
+        let system = System::new(Radios {
+            wifi: false,
+            ble: false,
+        });
+        let mut frame = vec![PACKED_WHITE; FRAME_BYTES];
+        let mut image = vec![PACKED_WHITE; FRAME_BYTES];
+        let mut executor = Executor::new();
+        executor.spawn(application_loop(
+            &system,
+            settings,
+            error,
+            WakeReason::Timer,
+            || (12345, 654321),
+        ));
+        executor.spawn(bus_loop_with_media(
+            &system,
+            board.clone(),
+            board.clone(),
+            &mut frame,
+            &mut image,
+        ));
+        executor.spawn(measurements(&system, board.clone(), |_| {}));
+        executor.spawn(buttons_loop(&system, board.clone()));
+        executor.spawn(console_loop(&system, board.clone(), "fixture"));
+        executor.spawn(ticks(&system));
+        assert!(executor.until(3000, || board.0.borrow().sleeping == Some(60)));
+        assert_eq!(
+            system
+                .presented()
+                .unwrap()
+                .gallery
+                .settings()
+                .selected
+                .number(),
+            if cycle % 2 == 0 { 3 } else { 1 }
+        );
+        assert_eq!(system.snapshot().unwrap().settings(), settings);
+        assert_eq!(
+            board
+                .0
+                .borrow()
+                .trace
+                .iter()
+                .filter(|line| line.starts_with("flash "))
+                .count(),
+            writes
+        );
+    }
+}
+#[test]
+fn a_late_image_storage_reply_cannot_acknowledge_a_new_command() {
+    let _clock = clock();
+    let system = System::new(Radios {
+        wifi: false,
+        ble: false,
+    });
+    let board = Board::new();
+    let result = core::cell::Cell::new(None);
+    let mut io = board.clone();
+    let mut executor = Executor::new();
+    executor.spawn(async {
+        result.set(Some(
+            device_runtime::console::command(&system, &mut io, "control 5 image abort 7").await,
+        ));
+        core::future::pending::<()>().await;
+    });
+    executor.advance(0);
+    let device_runtime::state::BusRequest::Media(request) = system.bus.try_receive().unwrap()
+    else {
+        panic!("missing media request")
+    };
+    system
+        .media_reply
+        .signal(device_runtime::state::MediaReply {
+            id: request.id + 1,
+            result: Ok(0),
+        });
+    executor.advance(0);
+    assert_eq!(result.get(), None);
+    system
+        .media_reply
+        .signal(device_runtime::state::MediaReply {
+            id: request.id,
+            result: Err(e1004_bsp::media::MediaError::Missing),
+        });
+    assert!(executor.until(10, || result.get().is_some()));
+    assert_eq!(result.get(), Some(false));
+    assert!(board.output().ends_with("reply 5 error\r\n"));
+}
+#[test]
+fn an_unreadable_gallery_index_does_not_replace_a_retained_panel_image() {
+    let _clock = clock();
+    let mut board = Board::new();
+    {
+        let mut device = board.0.borrow_mut();
+        device.buttons[1] = false;
+        device.media_fault = true;
+        device.slots[0] = device_core::settings::encode(
+            device_core::settings::Settings {
+                screen: ScreenId::Gallery,
+                ..Default::default()
+            },
+            0,
+        );
+    }
+    let (settings, error) = loaded(&mut board);
+    let system = System::new(Radios {
+        wifi: false,
+        ble: false,
+    });
+    let mut frame = vec![PACKED_WHITE; FRAME_BYTES];
+    let mut executor = Executor::new();
+    executor.spawn(application_loop(
+        &system,
+        settings,
+        error,
+        WakeReason::PowerOn,
+        || (12345, 654321),
+    ));
+    executor.spawn(bus_loop(&system, board.clone(), board.clone(), &mut frame));
+    executor.spawn(measurements(&system, board.clone(), |_| {}));
+    executor.spawn(ticks(&system));
+    assert!(executor.until(3000, || system
+        .snapshot()
+        .is_some_and(|app| app.refresh == RefreshState::Failed(Fault::Storage))));
+    assert!(board.0.borrow().frames.is_empty());
+    assert!(system.presented().is_none());
+    board.0.borrow_mut().media_fault = false;
+    system
+        .events
+        .try_send(AppEvent::Hold(Button::Refresh))
+        .unwrap();
+    assert!(executor.until(3000, || system
+        .presented()
+        .is_some_and(|app| app.screen == ScreenId::Gallery)));
+    assert_eq!(board.0.borrow().frames.len(), 1);
+}
 use device_core::{
     app::*,
     geometry::{FRAME_BYTES, PACKED_WHITE},
@@ -8,6 +188,294 @@ use device_runtime::{
     buttons::buttons_loop, console::console_loop, policy::Radios, state::System, tasks::*,
 };
 use support::*;
+
+macro_rules! boot {
+    ($board:ident, $system:ident, $frame:ident, $executor:ident, $configure:expr) => {
+        boot!(
+            $board,
+            $system,
+            $frame,
+            $executor,
+            $configure,
+            Radios {
+                wifi: false,
+                ble: false
+            }
+        );
+    };
+    ($board:ident, $system:ident, $frame:ident, $executor:ident, $configure:expr, $capabilities:expr) => {
+        boot!(
+            $board,
+            $system,
+            $frame,
+            $executor,
+            $configure,
+            $capabilities,
+            WakeReason::PowerOn
+        );
+    };
+    ($board:ident, $system:ident, $frame:ident, $executor:ident, $configure:expr, $capabilities:expr,$wake:expr) => {
+        let mut $board = Board::new();
+        $configure(&$board);
+        let (settings, error) = loaded(&mut $board);
+        let $system = System::new($capabilities);
+        let mut $frame = vec![PACKED_WHITE; FRAME_BYTES];
+        let mut $executor = Executor::new();
+        $executor.spawn(application_loop(&$system, settings, error, $wake, || {
+            (12345, 654321)
+        }));
+        $executor.spawn(bus_loop(
+            &$system,
+            $board.clone(),
+            $board.clone(),
+            &mut $frame,
+        ));
+        $executor.spawn(measurements(&$system, $board.clone(), |_| {}));
+        $executor.spawn(buttons_loop(&$system, $board.clone()));
+        $executor.spawn(console_loop(&$system, $board.clone(), "fixture"));
+        $executor.spawn(ticks(&$system));
+    };
+}
+
+#[test]
+fn browser_control_commits_color_images_and_recovers_interrupted_transfers_through_production_tasks(
+) {
+    use device_core::{
+        media::{GalleryEvent, ImageId, SlideInterval},
+        settings::crc32,
+    };
+    let _clock = clock();
+    let mut board = Board::new();
+    board.0.borrow_mut().buttons[1] = false;
+    let (settings, error) = loaded(&mut board);
+    let system = System::new(Radios {
+        wifi: false,
+        ble: false,
+    });
+    let mut frame = vec![PACKED_WHITE; FRAME_BYTES];
+    let mut image = vec![PACKED_WHITE; FRAME_BYTES];
+    let mut executor = Executor::new();
+    executor.spawn(application_loop(
+        &system,
+        settings,
+        error,
+        WakeReason::PowerOn,
+        || (12345, 654321),
+    ));
+    executor.spawn(bus_loop_with_media(
+        &system,
+        board.clone(),
+        board.clone(),
+        &mut frame,
+        &mut image,
+    ));
+    executor.spawn(measurements(&system, board.clone(), |_| {}));
+    executor.spawn(buttons_loop(&system, board.clone()));
+    executor.spawn(console_loop(&system, board.clone(), "fixture"));
+    executor.spawn(ticks(&system));
+    executor.advance(1000);
+    let mut sequence = 0u32;
+    let mut command = |executor: &mut Executor<'_>, body: &str, ok: bool| {
+        sequence += 1;
+        board.0.borrow_mut().uart_tx.clear();
+        board.command(&format!("control {sequence} {body}"));
+        let reply = format!("reply {sequence} {}\r\n", if ok { "ok" } else { "error" });
+        assert!(
+            executor.until(1000, || board
+                .0
+                .borrow()
+                .uart_tx
+                .ends_with(reply.as_bytes())),
+            "{body}: {}",
+            board.output()
+        );
+    };
+    command(&mut executor, "awake 600", true);
+    command(&mut executor, "help", true);
+    assert!(board.output().contains("image commit ID"));
+    let mut pixels = vec![0x33; FRAME_BYTES];
+    command(
+        &mut executor,
+        &format!("image begin 10 3 0 {}", crc32(&pixels)),
+        true,
+    );
+    for (i, bytes) in pixels.chunks(64).enumerate() {
+        use core::fmt::Write;
+        let mut line = format!("image data 10 {} ", i * 64);
+        for byte in bytes {
+            write!(&mut line, "{byte:02x}").unwrap();
+        }
+        command(&mut executor, &line, true);
+        assert!(system.snapshot().unwrap().gallery.busy());
+        assert_eq!(board.0.borrow().sleeping, None);
+    }
+    command(&mut executor, "image commit 11", false);
+    command(&mut executor, "image commit 10", true);
+    assert!(
+        executor.until(2000, || system
+            .presented()
+            .is_some_and(|app| app.screen == ScreenId::Gallery
+                && app.gallery.settings().selected.number() == 3))
+    );
+    assert!(board
+        .0
+        .borrow()
+        .frames
+        .last()
+        .unwrap()
+        .iter()
+        .all(|v| *v == 0x33));
+    let catalog = system.snapshot().unwrap().gallery.catalog();
+    command(&mut executor, "image begin 20 3 0 0", true);
+    command(&mut executor, "image data 20 0 00000000", true);
+    command(&mut executor, "image abort 21", false);
+    command(&mut executor, "image abort 20", true);
+    assert_eq!(system.snapshot().unwrap().gallery.catalog(), catalog);
+    command(&mut executor, "image begin 30 3 0 0", true);
+    executor.advance(61000);
+    assert!(!system.snapshot().unwrap().gallery.busy());
+    assert_eq!(system.snapshot().unwrap().gallery.catalog(), catalog);
+    assert_eq!(board.0.borrow().sleeping, None);
+    command(&mut executor, "image import 3", false);
+    assert_eq!(system.snapshot().unwrap().gallery.catalog(), catalog);
+    pixels.fill(0x55);
+    let mut file = device_core::media::ImageRecord::image(
+        ImageId::new(3).unwrap(),
+        0,
+        device_core::geometry::Rotation::Portrait,
+        crc32(&pixels),
+    )
+    .encode()
+    .to_vec();
+    file.extend_from_slice(&pixels);
+    board.0.borrow_mut().sd_image = Some(file.clone());
+    command(&mut executor, "image import 3", true);
+    let expected_checksum = crc32(&pixels);
+    assert!(
+        executor.until(2000, || system.presented().is_some_and(|app| app
+            .gallery
+            .view()
+            .image
+            .is_some_and(
+                |(_, descriptor)| descriptor.checksum == expected_checksum
+            )))
+    );
+    let catalog = system.snapshot().unwrap().gallery.catalog();
+    file[40] ^= 1;
+    board.0.borrow_mut().sd_image = Some(file);
+    command(&mut executor, "image import 3", false);
+    assert_eq!(system.snapshot().unwrap().gallery.catalog(), catalog);
+    system
+        .events
+        .try_send(AppEvent::Gallery(GalleryEvent::Slideshow(
+            SlideInterval::new(60),
+        )))
+        .unwrap();
+    command(&mut executor, "status", true);
+    assert!(board.output().contains("event=image number=3"));
+    assert!(board
+        .output()
+        .contains("event=shown screen=Gallery image=3"));
+    command(&mut executor, "awake 0", true);
+    board.0.borrow_mut().buttons[1] = true;
+    assert!(executor.until(4000, || board.0.borrow().sleeping == Some(60)));
+    drop(executor);
+    let (settings, error) = loaded(&mut board);
+    assert_eq!(error, None);
+    assert_eq!(settings.gallery.selected.number(), 3);
+    assert_eq!(settings.gallery.slideshow, SlideInterval::new(60));
+    let store = e1004_bsp::media::MediaStore::open(&mut board).unwrap();
+    assert_eq!(store.catalog(), catalog);
+    store
+        .load(&mut board, ImageId::new(3).unwrap(), &mut image)
+        .unwrap();
+    assert_eq!(image, pixels);
+}
+
+#[test]
+fn daily_content_selection_and_calendar_survive_console_editing_sleep_and_restart() {
+    use device_core::settings::Settings;
+    let _clock = clock();
+    for screen in [ScreenId::Calendar, ScreenId::Checklist, ScreenId::Notes] {
+        embassy_time::MockDriver::get().reset();
+        boot!(board, system, frame, executor, |board: &Board| {
+            board.0.borrow_mut().buttons[1] = false;
+        });
+        executor.advance(1000);
+        for command in [
+            "interval 600",
+            "rotation 3",
+            "task set 1 Buy groceries",
+            "task set 6 Water plants",
+            "task done 1",
+            "note set Return the library books.",
+        ] {
+            board.command(command);
+        }
+        board.command(match screen {
+            ScreenId::Calendar => "screen calendar",
+            ScreenId::Checklist => "screen checklist",
+            _ => "screen notes",
+        });
+        assert!(executor
+            .until(3000, || system.snapshot().is_some_and(|app| app.screen
+                == screen
+                && app.daily.note().as_str() == "Return the library books.")));
+        if screen == ScreenId::Calendar {
+            board.command("hold next");
+        }
+        if screen == ScreenId::Checklist {
+            for _ in 0..5 {
+                board.command("hold next");
+            }
+        }
+        executor.advance(1500);
+        assert!(executor.until(3000, || system
+            .snapshot()
+            .is_some_and(|app| app.refresh == RefreshState::Idle)));
+        let expected = system.snapshot().unwrap().settings();
+        assert_eq!(expected.refresh_seconds, 600);
+        assert_eq!(expected.rotation, 3);
+        assert_eq!(expected.daily.counts(), (1, 2));
+        if screen == ScreenId::Calendar {
+            assert!(expected.calendar_month.is_some());
+        }
+        if screen == ScreenId::Checklist {
+            assert_eq!(expected.selected_task.number(), 6);
+        }
+        board.command("status");
+        executor.advance(200);
+        assert!(board.output().contains("Return the library books."));
+        board.0.borrow_mut().buttons[1] = true;
+        assert!(executor.until(3000, || board.0.borrow().sleeping.is_some()));
+        drop(executor);
+        let (settings, error) = loaded(&mut board);
+        assert_eq!(error, None);
+        assert_eq!(settings, expected);
+        assert_ne!(settings, Settings::default());
+        board.0.borrow_mut().sleeping = None;
+        let reboot = System::new(device_runtime::policy::Radios {
+            wifi: false,
+            ble: false,
+        });
+        let mut executor = Executor::new();
+        executor.spawn(application_loop(
+            &reboot,
+            settings,
+            error,
+            WakeReason::Timer,
+            || (12345, 654321),
+        ));
+        executor.spawn(bus_loop(&reboot, board.clone(), board.clone(), &mut frame));
+        executor.spawn(measurements(&reboot, board.clone(), |_| {}));
+        executor.spawn(buttons_loop(&reboot, board.clone()));
+        executor.spawn(console_loop(&reboot, board.clone(), "fixture"));
+        executor.spawn(ticks(&reboot));
+        assert!(executor.until(3000, || reboot
+            .presented()
+            .is_some_and(|app| app.screen == screen && app.settings() == expected)));
+    }
+}
 
 #[test]
 fn virtual_time_advances_while_a_ready_task_keeps_yielding() {
@@ -62,18 +530,63 @@ fn physical_active_low_buttons_emit_one_event_only_after_a_stable_press() {
         executor.advance(40);
         assert!(system.events.is_empty());
         executor.advance(20);
-        assert_eq!(system.events.try_receive(), Ok(AppEvent::Button(button)));
+        assert!(system.events.is_empty());
         executor.advance(200);
         assert!(system.events.is_empty());
         board.0.borrow_mut().buttons[index] = true;
         executor.advance(80);
-        assert!(system.events.is_empty());
+        assert_eq!(system.events.try_receive(), Ok(AppEvent::Button(button)));
         board.0.borrow_mut().buttons[index] = false;
         executor.advance(60);
-        assert_eq!(system.events.try_receive(), Ok(AppEvent::Button(button)));
+        assert!(system.events.is_empty());
+        executor.advance(820);
+        assert_eq!(system.events.try_receive(), Ok(AppEvent::Hold(button)));
+        executor.advance(1000);
         assert!(system.events.is_empty());
         board.0.borrow_mut().buttons[index] = true;
         executor.advance(80);
+    }
+}
+
+#[test]
+fn sleep_arming_waits_for_each_button_release_to_finish_gesture_classification() {
+    let _clock = clock();
+    for (index, button) in [Button::Previous, Button::Refresh, Button::Next]
+        .into_iter()
+        .enumerate()
+    {
+        for held in [false, true] {
+            embassy_time::MockDriver::get().reset();
+            let system = System::new(Radios {
+                wifi: false,
+                ble: false,
+            });
+            let board = Board::new();
+            let mut executor = Executor::new();
+            executor.spawn(buttons_loop(&system, board.clone()));
+            board.0.borrow_mut().buttons[index] = false;
+            executor.advance(60);
+            if held {
+                executor.advance(820);
+                assert_eq!(system.events.try_receive(), Ok(AppEvent::Hold(button)));
+            }
+            board.0.borrow_mut().buttons[index] = true;
+            system.button_sleep.signal(true);
+            executor.advance(20);
+            assert_eq!(system.button_armed.try_take(), Some(false));
+            assert_eq!(board.0.borrow().armed, [false; 3]);
+            executor.advance(40);
+            if held {
+                assert!(system.events.is_empty());
+            } else {
+                assert_eq!(system.events.try_receive(), Ok(AppEvent::Button(button)));
+            }
+            system.button_sleep.signal(true);
+            executor.advance(20);
+            assert_eq!(system.button_armed.try_take(), Some(true));
+            assert_eq!(board.0.borrow().armed, [true; 3]);
+            assert!(system.events.is_empty());
+        }
     }
 }
 
@@ -166,54 +679,6 @@ fn real_firmware_tasks_boot_measure_serve_console_persist_and_sleep_then_reboot(
     assert_eq!(board.output().matches("event=console_ready").count(), 2);
 }
 
-macro_rules! boot {
-    ($board:ident, $system:ident, $frame:ident, $executor:ident, $configure:expr) => {
-        boot!(
-            $board,
-            $system,
-            $frame,
-            $executor,
-            $configure,
-            Radios {
-                wifi: false,
-                ble: false
-            }
-        );
-    };
-    ($board:ident, $system:ident, $frame:ident, $executor:ident, $configure:expr, $capabilities:expr) => {
-        boot!(
-            $board,
-            $system,
-            $frame,
-            $executor,
-            $configure,
-            $capabilities,
-            WakeReason::PowerOn
-        );
-    };
-    ($board:ident, $system:ident, $frame:ident, $executor:ident, $configure:expr, $capabilities:expr,$wake:expr) => {
-        let mut $board = Board::new();
-        $configure(&$board);
-        let (settings, error) = loaded(&mut $board);
-        let $system = System::new($capabilities);
-        let mut $frame = vec![PACKED_WHITE; FRAME_BYTES];
-        let mut $executor = Executor::new();
-        $executor.spawn(application_loop(&$system, settings, error, $wake, || {
-            (12345, 654321)
-        }));
-        $executor.spawn(bus_loop(
-            &$system,
-            $board.clone(),
-            $board.clone(),
-            &mut $frame,
-        ));
-        $executor.spawn(measurements(&$system, $board.clone(), |_| {}));
-        $executor.spawn(buttons_loop(&$system, $board.clone()));
-        $executor.spawn(console_loop(&$system, $board.clone(), "fixture"));
-        $executor.spawn(ticks(&$system));
-    };
-}
-
 #[test]
 fn switching_resume_policy_saves_the_active_screen_without_an_extra_sleep_write() {
     use device_core::settings::{ResumePolicy, Settings};
@@ -222,7 +687,7 @@ fn switching_resume_policy_saves_the_active_screen_without_an_extra_sleep_write(
         (ResumePolicy::Status, ResumePolicy::Last, "resume last"),
         (ResumePolicy::Last, ResumePolicy::Status, "resume status"),
     ] {
-        for screen in [ScreenId::Status, ScreenId::Diagnostics, ScreenId::Drawing] {
+        for screen in ScreenId::ALL {
             embassy_time::MockDriver::get().reset();
             boot!(board, system, frame, executor, |board: &Board| {
                 let mut device = board.0.borrow_mut();
@@ -233,22 +698,16 @@ fn switching_resume_policy_saves_the_active_screen_without_an_extra_sleep_write(
                         rotation: 3,
                         resume: initial,
                         screen: ScreenId::Status,
+                        ..Settings::default()
                     },
                     7,
                 );
             });
             executor.advance(1000);
-            match screen {
-                ScreenId::Status => {}
-                ScreenId::Diagnostics => system
-                    .events
-                    .try_send(AppEvent::Button(Button::Next))
-                    .unwrap(),
-                ScreenId::Drawing => system
-                    .events
-                    .try_send(AppEvent::Button(Button::Previous))
-                    .unwrap(),
-            }
+            system
+                .events
+                .try_send(AppEvent::SelectScreen(screen))
+                .unwrap();
             assert!(executor.until(3000, || system
                 .presented()
                 .is_some_and(|app| app.screen == screen)
@@ -386,7 +845,7 @@ fn settings_fault_matrix_preserves_sd_status_and_reports_the_actual_operation() 
 fn screen_policy_survives_real_sleep_and_restart_without_rewriting_unchanged_settings() {
     let _clock = clock();
     for policy in ["last", "status"] {
-        for screen in [ScreenId::Diagnostics, ScreenId::Drawing] {
+        for screen in ScreenId::ALL {
             for wake in [WakeReason::Timer, WakeReason::Button, WakeReason::PowerOn] {
                 embassy_time::MockDriver::get().reset();
                 boot!(board, system, frame, executor, |board: &Board| {
@@ -395,12 +854,10 @@ fn screen_policy_survives_real_sleep_and_restart_without_rewriting_unchanged_set
                 executor.advance(1000);
                 board.command(&format!("resume {policy}"));
                 executor.advance(500);
-                for _ in 0..if screen == ScreenId::Drawing { 2 } else { 1 } {
-                    system
-                        .events
-                        .try_send(AppEvent::Button(Button::Next))
-                        .unwrap();
-                }
+                system
+                    .events
+                    .try_send(AppEvent::SelectScreen(screen))
+                    .unwrap();
                 assert!(executor.until(3000, || system
                     .presented()
                     .is_some_and(|app| app.screen == screen)
@@ -467,6 +924,9 @@ fn rapid_measurement_and_navigation_requests_coalesce_before_sleep() {
         board.0.borrow_mut().buttons[1] = false;
     });
     executor.advance(1000);
+    assert!(executor.until(3000, || system
+        .snapshot()
+        .is_some_and(|app| app.refresh == RefreshState::Idle)));
     let before = board.0.borrow().frames.len();
     system
         .events
@@ -491,7 +951,7 @@ fn rapid_measurement_and_navigation_requests_coalesce_before_sleep() {
         1,
         "requests during measurement must share one sample and final display"
     );
-    assert_eq!(system.presented().unwrap().screen, ScreenId::Drawing);
+    assert_eq!(system.presented().unwrap().screen, ScreenId::Notes);
     assert!(!system.snapshot().unwrap().measurement_busy);
 }
 
@@ -501,13 +961,13 @@ fn every_radio_combination_rotation_and_screen_survives_boot_input_sleep_and_wak
     let _clock = clock();
     for mode in 0..4 {
         for rotation in 0..4 {
-            for screen in 0..3 {
+            for screen in 0..ScreenId::ALL.len() {
                 embassy_time::MockDriver::get().reset();
                 let capabilities = Radios {
                     wifi: mode & 1 != 0,
                     ble: mode & 2 != 0,
                 };
-                let wake = [WakeReason::PowerOn, WakeReason::Timer, WakeReason::Button][screen];
+                let wake = [WakeReason::PowerOn, WakeReason::Timer, WakeReason::Button][screen % 3];
                 let interval = [60, 1800, 3600, 86400][usize::from(rotation)];
                 boot!(
                     board,
@@ -586,7 +1046,7 @@ fn every_radio_combination_rotation_and_screen_survives_boot_input_sleep_and_wak
                 let (settings, error) = loaded(&mut board);
                 assert_eq!(error, None);
                 assert_eq!(settings.rotation, rotation);
-                let selected = [ScreenId::Status, ScreenId::Diagnostics, ScreenId::Drawing][screen];
+                let selected = ScreenId::ALL[screen];
                 let writes = board
                     .0
                     .borrow()
@@ -659,7 +1119,7 @@ fn failed_screen_retention_is_reported_once_and_preserves_a_committed_screen() {
         executor.advance(500);
         system
             .events
-            .try_send(AppEvent::Button(Button::Previous))
+            .try_send(AppEvent::SelectScreen(ScreenId::Drawing))
             .unwrap();
         assert!(executor.until(3000, || system
             .presented()
@@ -715,7 +1175,9 @@ fn wifi_scan_connect_disconnect_and_sleep_release_the_real_task_controller() {
     board.command("wifi connect fixture\tprivate-key");
     assert!(
         executor.until(1000, || system.snapshot().unwrap().diagnostics.wifi
-            == RadioStatus::Connected)
+            == RadioStatus::Connected
+            && board.output().contains("wifi_scan networks=1")
+            && board.output().contains("signal_dbm=-42"))
     );
     assert_eq!(wifi.0.borrow().scans, 1);
     assert!(board.output().contains("wifi_scan networks=1"));
@@ -789,7 +1251,7 @@ fn events_arriving_while_the_panel_enters_sleep_cancel_deep_sleep() {
     executor.advance(10);
     assert!(board.0.borrow().sleeping.is_none());
     assert!(executor.until(1000, || board.0.borrow().sleeping.is_some()));
-    assert_eq!(system.snapshot().unwrap().screen, ScreenId::Diagnostics);
+    assert_eq!(system.snapshot().unwrap().screen, ScreenId::Calendar);
 }
 
 #[test]

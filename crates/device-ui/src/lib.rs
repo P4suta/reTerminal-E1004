@@ -18,7 +18,9 @@ use embedded_graphics::{
     text::{Baseline, Text},
 };
 
+mod daily;
 mod layout;
+use daily::{CalendarScreen, ChecklistScreen, NotesScreen};
 #[cfg(kani)]
 mod proofs;
 use layout::*;
@@ -106,17 +108,77 @@ pub struct DiagnosticsScreen;
 pub struct DrawingScreen;
 
 pub fn render(app: &App, target: &mut Framebuffer<'_>) {
+    render_with_media(app, target, None);
+}
+
+pub fn render_with_media(
+    app: &App,
+    target: &mut Framebuffer<'_>,
+    image: Option<device_core::media::PackedFrame<'_>>,
+) {
     target.fill(Color::White);
+    if app.screen == ScreenId::Gallery {
+        if let Some(image) = image {
+            let (sw, sh) = image.rotation().dimensions();
+            let (w, h) = target.dimensions();
+            if let (Some(source), Some(destination)) = (
+                device_core::image::Size::new(sw, sh),
+                device_core::image::Size::new(w, h),
+            ) {
+                let settings = app.gallery.settings();
+                let placement = device_core::image::Placement::new(
+                    source,
+                    destination,
+                    settings.fit,
+                    settings.anchor,
+                );
+                for y in 0..h {
+                    for x in 0..w {
+                        if let Some((sx, sy)) = placement.source(x, y) {
+                            if let Some(color) = image.pixel(sx, sy) {
+                                target.put(x, y, color);
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+    }
     match app.screen {
         ScreenId::Status => DeviceStatus.draw(target, app),
         ScreenId::Diagnostics => DiagnosticsScreen.draw(target, app),
         ScreenId::Drawing => DrawingScreen.draw(target, app),
+        ScreenId::Calendar => CalendarScreen.draw(target, app),
+        ScreenId::Checklist => ChecklistScreen.draw(target, app),
+        ScreenId::Notes => NotesScreen.draw(target, app),
+        ScreenId::Gallery => {
+            text(target, "GALLERY", MARGIN, 100, HEADING_SCALE);
+            text(
+                target,
+                "Import images in the browser.",
+                MARGIN,
+                200,
+                LABEL_SCALE,
+            );
+            text(
+                target,
+                "Hold a side button to change screens.",
+                MARGIN,
+                270,
+                FOOTNOTE_SCALE,
+            );
+        }
     }
     let (w, h) = target.dimensions();
     rule(target, i32::from(h) - FOOTER_RULE_BOTTOM);
+    let controls = TextBuffer::<DETAIL_TEXT_BYTES>::formatted(format_args!(
+        "PREVIOUS     {}     NEXT",
+        app.middle_label()
+    ));
     text(
         target,
-        "PREVIOUS     REFRESH     NEXT",
+        controls.as_str(),
         MARGIN,
         i32::from(h) - FOOTER_NAV_BOTTOM,
         LABEL_SCALE,
@@ -327,6 +389,23 @@ impl Screen for DeviceStatus {
             TIME_Y + CLOCK_STATE_OFFSET,
             LABEL_SCALE,
         );
+        if let Some(date) = sample_value(app.telemetry.clock).filter(|date| date.valid()) {
+            let weekday = device_core::calendar::Month::new(date.year, date.month)
+                .and_then(|month| month.weekday(date.day))
+                .and_then(|day| day.get(..3))
+                .unwrap_or("");
+            let date = TextBuffer::<32>::formatted(format_args!(
+                "{weekday} {:04}-{:02}-{:02}",
+                date.year, date.month, date.day
+            ));
+            text(
+                target,
+                date.as_str(),
+                middle + HALF_GUTTER,
+                TIME_Y + 128,
+                LABEL_SCALE,
+            );
+        }
         text(
             target,
             "TEMPERATURE / C",

@@ -1,6 +1,6 @@
 # E1004 firmware
 
-Offline Rust firmware and shared native and Web previews for the reTerminal E1004.
+Offline image gallery, calendar, checklist, and browser control for the reTerminal E1004.
 
 ## Installation
 
@@ -11,7 +11,7 @@ mise install
 ## Usage
 
 ```sh
-mise x -- just sim --png target/status.png --replay verification/fixtures/status.events
+mise x -- just web
 ```
 
 ## License

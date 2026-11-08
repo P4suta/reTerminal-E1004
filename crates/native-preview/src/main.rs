@@ -22,6 +22,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             "--png" => png_path = Some(args.next().ok_or("--png requires a path")?.into()),
             "--raw" => raw_path = Some(args.next().ok_or("--raw requires a path")?.into()),
+            "--image" => {
+                let path = args.next().ok_or("--image requires a path")?;
+                if fs::metadata(&path)?.len()
+                    != (device_core::media::HEADER_BYTES + device_core::geometry::FRAME_BYTES)
+                        as u64
+                {
+                    return Err("invalid prepared image length".into());
+                }
+                preview.import_image(1, &fs::read(path)?)?;
+            }
             "--frames" => {
                 remaining_frames = Some(
                     args.next()
@@ -71,13 +81,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     window.set_target_fps(WINDOW_FPS);
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        for (key, command) in [
-            (Key::Left, "previous"),
-            (Key::Space, "refresh"),
-            (Key::Right, "next"),
+        let held = window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift);
+        for (key, command, hold) in [
+            (Key::Left, "previous", "hold previous"),
+            (Key::Space, "refresh", "hold refresh"),
+            (Key::Right, "next", "hold next"),
         ] {
             if window.is_key_pressed(key, KeyRepeat::No) {
-                preview.command(command)?;
+                preview.command(if held { hold } else { command })?;
             }
         }
         let rgba = rgba(&preview.frame());
@@ -108,4 +119,4 @@ const WINDOW_HEIGHT: usize = HEIGHT as usize / 2;
 const WINDOW_FPS: usize = 30;
 const RED_SHIFT: u32 = 16;
 const GREEN_SHIFT: u32 = 8;
-const HELP: &str = "Usage: just sim [OPTIONS]\n\nOpen the Device Status preview.\nUse Left and Right to change screens, Space to refresh, and Escape to close.\n\n--png PATH       Export the complete display as PNG without opening a window.\n--raw PATH       Export the packed framebuffer without opening a window.\n--replay PATH    Replay a recorded event log before showing the display.\n--event COMMAND  Apply a preview command before showing the display.\n--frames COUNT   Close the window after a positive number of frames.\n--help, -h       Show this help.";
+const HELP: &str = "Usage: just sim [OPTIONS]\n\nOpen the Device Status preview.\nUse Left and Right to change screens, Space for the middle action, and Escape to close.\nHold Shift with an action key to simulate a held button.\n\n--png PATH       Export the complete display as PNG without opening a window.\n--raw PATH       Export the packed framebuffer without opening a window.\n--replay PATH    Replay a recorded event log before showing the display.\n--event COMMAND  Apply a preview command before showing the display.\n--frames COUNT   Close the window after a positive number of frames.\n--help, -h       Show this help.";
