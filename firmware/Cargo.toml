@@ -31,7 +31,7 @@ device-ui = { path = "../crates/device-ui" }
 device-runtime = { path = "../crates/device-runtime" }
 e1004-bsp = { path = "../crates/e1004-bsp" }
 t133a01 = { path = "../crates/t133a01" }
-esp-hal = { version = "=1.2.0", features = ["esp32s3", "unstable"] }
+esp-hal = { version = "=1.2.2", features = ["esp32s3", "unstable"] }
 esp-rtos = { version = "=0.4.0", features = [
   "esp32s3",
   "embassy",

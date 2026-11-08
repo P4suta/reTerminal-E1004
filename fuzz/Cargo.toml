@@ -14,7 +14,7 @@ trouble-host = { path = "../vendor/trouble-host" }
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "=0.4.10"
+libfuzzer-sys = "=0.4.13"
 serde_json = "=1.0.154"
 device-core = { path = "../crates/device-core" }
 e1004-bsp = { path = "../crates/e1004-bsp" }

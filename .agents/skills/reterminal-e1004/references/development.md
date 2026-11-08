@@ -7,7 +7,7 @@
 `t133a01` owns the portable register protocol behind `PanelIo`.
 `e1004-bsp` owns the pin inventory, sensor codecs, console parser, and transactional slot protocol.
 `device-runtime` owns the production Embassy tasks behind peripheral ports.
-`firmware` connects those tasks to ESP32-S3 effects through `esp-hal` 1.2.0 and `esp-rtos` 0.4.0.
+`firmware` connects those tasks to ESP32-S3 effects through `esp-hal` 1.2.2 and `esp-rtos` 0.4.0.
 `device-preview` shares event injection and replay between `native-preview` and `web-preview`.
 `xtask` owns development commands and validation.
 

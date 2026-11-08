@@ -274,3 +274,11 @@ model = "ESP32-S3 target-binary diagnostic experiment"
 revision = "esp-develop-9.2.2-20260417; Apple silicon archive sha256 bb8c15810565d3df1665dc34962430885e11bc95575b228fb44698146be1e9d6"
 license = "QEMU GPL-2.0; binary used locally, not redistributed"
 unverified = "Complete board execution and physical behavior; concrete model limitations are recorded in docs/verification/target-emulation.md"
+
+[[source]]
+url = "https://github.com/esp-rs/esp-hal/blob/esp-hal-v1.2.2/esp-hal/CHANGELOG.md"
+retrieved = "2026-11-08"
+model = "ESP32-S3 firmware dependency patch update"
+revision = "esp-hal 1.2.2; Cargo archive sha256 c9e3dfd511fed638fe41fdb4595f8c7f0cbb488d0f0cf2bbc063d76d805057cf"
+license = "MIT OR Apache-2.0; dependency and external reference only"
+unverified = "Physical peripheral behavior remains outside host tests and target compilation"
